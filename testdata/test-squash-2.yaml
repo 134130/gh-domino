@@ -1,0 +1,738 @@
+#
+# * bb05d06 - (main) foo (#46)
+# | * 570aeb9 - (stack-3) baz - PR #48 baz (stack2 <- stack3)
+# | * d878db1 - (stack-2) bar - PR #47 bar (stack1 <- stack2)
+# | * 909d871 - (stack-1) foo - PR #46 [MERGED] (branch not yet deleted)
+# |/
+# * 540c30f - init
+#
+- command: "git fetch origin"
+  stdout:
+- command: "git remote show origin"
+  stdout: |
+    * remote origin
+      Fetch URL: git@github.com-134130:134130/test-domino
+      Push  URL: git@github.com-134130:134130/test-domino
+      HEAD branch: main
+      Remote branches:
+        main    tracked
+- command: "git merge-base --is-ancestor 909d871a7213af3fde9dc48c0103fa23d08b2de5 d878db1ed89159318c518fd53a96e75851ff91db"
+  exitCode: 0
+- command: "git rev-parse origin/stack-1"
+  stdout: 909d871a7213af3fde9dc48c0103fa23d08b2de5
+- command: "git rev-parse origin/stack-2"
+  stdout: d878db1ed89159318c518fd53a96e75851ff91db
+- command: "git rev-parse origin/stack-3"
+  stdout: 570aeb945d9518145c3dabf153a65a4ee864a136
+- command: "gh pr list --author @me --json number,title,url,author,state,isDraft,mergeCommit,baseRefName,headRefName,headRepository"
+  stdout: |
+    [
+      {
+        "author": {
+          "id": "MDQ6VXNlcjUwNDg3NDY3",
+          "is_bot": false,
+          "login": "134130",
+          "name": "JiHwan Oh"
+        },
+        "baseRefName": "stack-2",
+        "headRefName": "stack-3",
+        "headRepository": {
+          "id": "R_kgDOPg9I-g",
+          "name": "test-domino"
+        },
+        "isDraft": false,
+        "mergeCommit": null,
+        "number": 53,
+        "state": "OPEN",
+        "title": "baz",
+        "url": "https://github.com/134130/test-domino/pull/53"
+      },
+      {
+        "author": {
+          "id": "MDQ6VXNlcjUwNDg3NDY3",
+          "is_bot": false,
+          "login": "134130",
+          "name": "JiHwan Oh"
+        },
+        "baseRefName": "stack-1",
+        "headRefName": "stack-2",
+        "headRepository": {
+          "id": "R_kgDOPg9I-g",
+          "name": "test-domino"
+        },
+        "isDraft": false,
+        "mergeCommit": null,
+        "number": 52,
+        "state": "OPEN",
+        "title": "bar",
+        "url": "https://github.com/134130/test-domino/pull/52"
+      }
+    ]
+
+- command: "gh pr list --author @me --state merged --limit 30 --json number,title,url,author,state,isDraft,mergeCommit,baseRefName,headRefName,headRepository,commits"
+  stdout: |
+    [
+      {
+        "author": {
+          "id": "MDQ6VXNlcjUwNDg3NDY3",
+          "is_bot": false,
+          "login": "134130",
+          "name": "JiHwan Oh"
+        },
+        "baseRefName": "main",
+        "commits": [
+          {
+            "authoredDate": "2025-08-22T12:24:11Z",
+            "authors": [
+              {
+                "email": "sapindus.hwan@gmail.com",
+                "id": "MDQ6VXNlcjUwNDg3NDY3",
+                "login": "134130",
+                "name": "JiHwan Oh"
+              }
+            ],
+            "committedDate": "2025-08-22T12:24:11Z",
+            "messageBody": "",
+            "messageHeadline": "foo",
+            "oid": "909d871a7213af3fde9dc48c0103fa23d08b2de5"
+          }
+        ],
+        "headRefName": "stack-1",
+        "headRepository": {
+          "id": "R_kgDOPg9I-g",
+          "name": "test-domino"
+        },
+        "isDraft": false,
+        "mergeCommit": {
+          "oid": "bb05d0614ec671cc6f546411ce416537a9ac9d08"
+        },
+        "number": 51,
+        "state": "MERGED",
+        "title": "foo",
+        "url": "https://github.com/134130/test-domino/pull/51"
+      },
+      {
+        "author": {
+          "id": "MDQ6VXNlcjUwNDg3NDY3",
+          "is_bot": false,
+          "login": "134130",
+          "name": "JiHwan Oh"
+        },
+        "baseRefName": "main",
+        "commits": [
+          {
+            "authoredDate": "2025-08-22T12:01:08Z",
+            "authors": [
+              {
+                "email": "sapindus.hwan@gmail.com",
+                "id": "MDQ6VXNlcjUwNDg3NDY3",
+                "login": "134130",
+                "name": "JiHwan Oh"
+              }
+            ],
+            "committedDate": "2025-08-22T12:01:08Z",
+            "messageBody": "",
+            "messageHeadline": "foo",
+            "oid": "3e362d0ee180026b39865bed442073e339023c1b"
+          }
+        ],
+        "headRefName": "stack-1",
+        "headRepository": {
+          "id": "R_kgDOPg9I-g",
+          "name": "test-domino"
+        },
+        "isDraft": false,
+        "mergeCommit": {
+          "oid": "63f95e0fb86a92e39720fdb38303ffa574fa6246"
+        },
+        "number": 46,
+        "state": "MERGED",
+        "title": "foo",
+        "url": "https://github.com/134130/test-domino/pull/46"
+      },
+      {
+        "author": {
+          "id": "MDQ6VXNlcjUwNDg3NDY3",
+          "is_bot": false,
+          "login": "134130",
+          "name": "JiHwan Oh"
+        },
+        "baseRefName": "main",
+        "commits": [
+          {
+            "authoredDate": "2025-08-21T02:51:32Z",
+            "authors": [
+              {
+                "email": "sapindus.hwan@gmail.com",
+                "id": "MDQ6VXNlcjUwNDg3NDY3",
+                "login": "134130",
+                "name": "JiHwan Oh"
+              }
+            ],
+            "committedDate": "2025-08-21T02:51:32Z",
+            "messageBody": "",
+            "messageHeadline": "foo",
+            "oid": "1829aa37dade185d5191b83b6094b0355d3c413f"
+          }
+        ],
+        "headRefName": "stack-1",
+        "headRepository": {
+          "id": "R_kgDOPg9I-g",
+          "name": "test-domino"
+        },
+        "isDraft": false,
+        "mergeCommit": {
+          "oid": "e3234d382e615044970041d140cff8b67bd84174"
+        },
+        "number": 43,
+        "state": "MERGED",
+        "title": "foo",
+        "url": "https://github.com/134130/test-domino/pull/43"
+      },
+      {
+        "author": {
+          "id": "MDQ6VXNlcjUwNDg3NDY3",
+          "is_bot": false,
+          "login": "134130",
+          "name": "JiHwan Oh"
+        },
+        "baseRefName": "main",
+        "commits": [
+          {
+            "authoredDate": "2025-08-20T15:20:33Z",
+            "authors": [
+              {
+                "email": "sapindus.hwan@gmail.com",
+                "id": "MDQ6VXNlcjUwNDg3NDY3",
+                "login": "134130",
+                "name": "JiHwan Oh"
+              }
+            ],
+            "committedDate": "2025-08-20T15:20:33Z",
+            "messageBody": "",
+            "messageHeadline": "foo",
+            "oid": "8f1c94f2a1503e2bddd006d16b54c58f4c522c10"
+          }
+        ],
+        "headRefName": "stack-1",
+        "headRepository": {
+          "id": "R_kgDOPg9I-g",
+          "name": "test-domino"
+        },
+        "isDraft": false,
+        "mergeCommit": {
+          "oid": "83a2beb91f8b3da440507e0e07e1b7d506d97068"
+        },
+        "number": 38,
+        "state": "MERGED",
+        "title": "foo",
+        "url": "https://github.com/134130/test-domino/pull/38"
+      },
+      {
+        "author": {
+          "id": "MDQ6VXNlcjUwNDg3NDY3",
+          "is_bot": false,
+          "login": "134130",
+          "name": "JiHwan Oh"
+        },
+        "baseRefName": "main",
+        "commits": [
+          {
+            "authoredDate": "2025-08-20T15:08:16Z",
+            "authors": [
+              {
+                "email": "sapindus.hwan@gmail.com",
+                "id": "MDQ6VXNlcjUwNDg3NDY3",
+                "login": "134130",
+                "name": "JiHwan Oh"
+              }
+            ],
+            "committedDate": "2025-08-20T15:08:16Z",
+            "messageBody": "",
+            "messageHeadline": "foo",
+            "oid": "fef7d5c1796f432cd536db9ad5541dbd7350874c"
+          }
+        ],
+        "headRefName": "stack-1",
+        "headRepository": {
+          "id": "R_kgDOPg9I-g",
+          "name": "test-domino"
+        },
+        "isDraft": false,
+        "mergeCommit": {
+          "oid": "3631e635e8dd974d304ffa0a0cf3e1061b0fc830"
+        },
+        "number": 35,
+        "state": "MERGED",
+        "title": "foo",
+        "url": "https://github.com/134130/test-domino/pull/35"
+      },
+      {
+        "author": {
+          "id": "MDQ6VXNlcjUwNDg3NDY3",
+          "is_bot": false,
+          "login": "134130",
+          "name": "JiHwan Oh"
+        },
+        "baseRefName": "main",
+        "commits": [
+          {
+            "authoredDate": "2025-08-20T15:00:44Z",
+            "authors": [
+              {
+                "email": "sapindus.hwan@gmail.com",
+                "id": "MDQ6VXNlcjUwNDg3NDY3",
+                "login": "134130",
+                "name": "JiHwan Oh"
+              }
+            ],
+            "committedDate": "2025-08-20T15:00:44Z",
+            "messageBody": "",
+            "messageHeadline": "foo",
+            "oid": "39e71c8334a74423690aaa8a442896f350fd1f27"
+          }
+        ],
+        "headRefName": "stack-1",
+        "headRepository": {
+          "id": "R_kgDOPg9I-g",
+          "name": "test-domino"
+        },
+        "isDraft": false,
+        "mergeCommit": {
+          "oid": "7d146d3929ae4176537b4b44ea188261a45b6fbc"
+        },
+        "number": 32,
+        "state": "MERGED",
+        "title": "foo",
+        "url": "https://github.com/134130/test-domino/pull/32"
+      },
+      {
+        "author": {
+          "id": "MDQ6VXNlcjUwNDg3NDY3",
+          "is_bot": false,
+          "login": "134130",
+          "name": "JiHwan Oh"
+        },
+        "baseRefName": "main",
+        "commits": [
+          {
+            "authoredDate": "2025-08-20T14:42:29Z",
+            "authors": [
+              {
+                "email": "sapindus.hwan@gmail.com",
+                "id": "MDQ6VXNlcjUwNDg3NDY3",
+                "login": "134130",
+                "name": "JiHwan Oh"
+              }
+            ],
+            "committedDate": "2025-08-20T14:42:29Z",
+            "messageBody": "",
+            "messageHeadline": "foo",
+            "oid": "b79cd611f4ebb30b80df6077b225c240e70fd02f"
+          }
+        ],
+        "headRefName": "stack-1",
+        "headRepository": {
+          "id": "R_kgDOPg9I-g",
+          "name": "test-domino"
+        },
+        "isDraft": false,
+        "mergeCommit": {
+          "oid": "a8d556708aa68da0cb00c1a2f566f9a55c1d24d2"
+        },
+        "number": 29,
+        "state": "MERGED",
+        "title": "foo",
+        "url": "https://github.com/134130/test-domino/pull/29"
+      },
+      {
+        "author": {
+          "id": "MDQ6VXNlcjUwNDg3NDY3",
+          "is_bot": false,
+          "login": "134130",
+          "name": "JiHwan Oh"
+        },
+        "baseRefName": "main",
+        "commits": [
+          {
+            "authoredDate": "2025-08-20T14:03:17Z",
+            "authors": [
+              {
+                "email": "sapindus.hwan@gmail.com",
+                "id": "MDQ6VXNlcjUwNDg3NDY3",
+                "login": "134130",
+                "name": "JiHwan Oh"
+              }
+            ],
+            "committedDate": "2025-08-20T14:03:17Z",
+            "messageBody": "",
+            "messageHeadline": "foo",
+            "oid": "652471d49bca016e099f396e04ff028bd27c3ae5"
+          }
+        ],
+        "headRefName": "stack-1",
+        "headRepository": {
+          "id": "R_kgDOPg9I-g",
+          "name": "test-domino"
+        },
+        "isDraft": false,
+        "mergeCommit": {
+          "oid": "6a58378904a83e039d4fc28bc779ae99513426fe"
+        },
+        "number": 25,
+        "state": "MERGED",
+        "title": "foo",
+        "url": "https://github.com/134130/test-domino/pull/25"
+      },
+      {
+        "author": {
+          "id": "MDQ6VXNlcjUwNDg3NDY3",
+          "is_bot": false,
+          "login": "134130",
+          "name": "JiHwan Oh"
+        },
+        "baseRefName": "main",
+        "commits": [
+          {
+            "authoredDate": "2025-08-20T13:09:36Z",
+            "authors": [
+              {
+                "email": "sapindus.hwan@gmail.com",
+                "id": "MDQ6VXNlcjUwNDg3NDY3",
+                "login": "134130",
+                "name": "JiHwan Oh"
+              }
+            ],
+            "committedDate": "2025-08-20T13:09:36Z",
+            "messageBody": "",
+            "messageHeadline": "foo",
+            "oid": "1d8bbe7d197e9d25e9df361fd2a3ecca3cb64c82"
+          }
+        ],
+        "headRefName": "stack-1",
+        "headRepository": {
+          "id": "R_kgDOPg9I-g",
+          "name": "test-domino"
+        },
+        "isDraft": false,
+        "mergeCommit": {
+          "oid": "fd55c5adc541797215180cf72bcae4dd7b10cfbd"
+        },
+        "number": 23,
+        "state": "MERGED",
+        "title": "foo",
+        "url": "https://github.com/134130/test-domino/pull/23"
+      },
+      {
+        "author": {
+          "id": "MDQ6VXNlcjUwNDg3NDY3",
+          "is_bot": false,
+          "login": "134130",
+          "name": "JiHwan Oh"
+        },
+        "baseRefName": "main",
+        "commits": [
+          {
+            "authoredDate": "2025-08-20T08:14:54Z",
+            "authors": [
+              {
+                "email": "sapindus.hwan@gmail.com",
+                "id": "MDQ6VXNlcjUwNDg3NDY3",
+                "login": "134130",
+                "name": "JiHwan Oh"
+              }
+            ],
+            "committedDate": "2025-08-20T08:44:11Z",
+            "messageBody": "",
+            "messageHeadline": "bar",
+            "oid": "f9d7b529d0c1fe96e8b3d4aaf00756c30b803765"
+          }
+        ],
+        "headRefName": "stack-2",
+        "headRepository": {
+          "id": "R_kgDOPg9I-g",
+          "name": "test-domino"
+        },
+        "isDraft": false,
+        "mergeCommit": {
+          "oid": "87174165654a181fcccbb1566c5b914c652199a1"
+        },
+        "number": 21,
+        "state": "MERGED",
+        "title": "bar",
+        "url": "https://github.com/134130/test-domino/pull/21"
+      },
+      {
+        "author": {
+          "id": "MDQ6VXNlcjUwNDg3NDY3",
+          "is_bot": false,
+          "login": "134130",
+          "name": "JiHwan Oh"
+        },
+        "baseRefName": "main",
+        "commits": [
+          {
+            "authoredDate": "2025-08-20T08:14:47Z",
+            "authors": [
+              {
+                "email": "sapindus.hwan@gmail.com",
+                "id": "MDQ6VXNlcjUwNDg3NDY3",
+                "login": "134130",
+                "name": "JiHwan Oh"
+              }
+            ],
+            "committedDate": "2025-08-20T08:14:47Z",
+            "messageBody": "",
+            "messageHeadline": "foo",
+            "oid": "4ee463ca727ed1fa075781cdd478bafe8c3e9a7d"
+          }
+        ],
+        "headRefName": "stack-1",
+        "headRepository": {
+          "id": "R_kgDOPg9I-g",
+          "name": "test-domino"
+        },
+        "isDraft": false,
+        "mergeCommit": {
+          "oid": "3271b728f9c3cae17c5beefd89a34e786b448aca"
+        },
+        "number": 20,
+        "state": "MERGED",
+        "title": "foo",
+        "url": "https://github.com/134130/test-domino/pull/20"
+      },
+      {
+        "author": {
+          "id": "MDQ6VXNlcjUwNDg3NDY3",
+          "is_bot": false,
+          "login": "134130",
+          "name": "JiHwan Oh"
+        },
+        "baseRefName": "main",
+        "commits": [
+          {
+            "authoredDate": "2025-08-20T07:30:02Z",
+            "authors": [
+              {
+                "email": "sapindus.hwan@gmail.com",
+                "id": "MDQ6VXNlcjUwNDg3NDY3",
+                "login": "134130",
+                "name": "JiHwan Oh"
+              }
+            ],
+            "committedDate": "2025-08-20T07:33:13Z",
+            "messageBody": "",
+            "messageHeadline": "bar",
+            "oid": "99b0fba9ac1294ccc4e31bba483d0c6ce2675792"
+          }
+        ],
+        "headRefName": "stack-2",
+        "headRepository": {
+          "id": "R_kgDOPg9I-g",
+          "name": "test-domino"
+        },
+        "isDraft": false,
+        "mergeCommit": {
+          "oid": "24a7b8a4a4dcdc35941cb85b4e8820f49c48ca16"
+        },
+        "number": 18,
+        "state": "MERGED",
+        "title": "bar",
+        "url": "https://github.com/134130/test-domino/pull/18"
+      },
+      {
+        "author": {
+          "id": "MDQ6VXNlcjUwNDg3NDY3",
+          "is_bot": false,
+          "login": "134130",
+          "name": "JiHwan Oh"
+        },
+        "baseRefName": "main",
+        "commits": [
+          {
+            "authoredDate": "2025-08-20T07:29:56Z",
+            "authors": [
+              {
+                "email": "sapindus.hwan@gmail.com",
+                "id": "MDQ6VXNlcjUwNDg3NDY3",
+                "login": "134130",
+                "name": "JiHwan Oh"
+              }
+            ],
+            "committedDate": "2025-08-20T07:29:56Z",
+            "messageBody": "",
+            "messageHeadline": "foo",
+            "oid": "ebfb020c109fc788ce8aa2d376e32495a7bbfa33"
+          }
+        ],
+        "headRefName": "stack-1",
+        "headRepository": {
+          "id": "R_kgDOPg9I-g",
+          "name": "test-domino"
+        },
+        "isDraft": false,
+        "mergeCommit": {
+          "oid": "c99266a2b7c74b82d9ce05f5e45439ebfc932ddd"
+        },
+        "number": 17,
+        "state": "MERGED",
+        "title": "foo",
+        "url": "https://github.com/134130/test-domino/pull/17"
+      },
+      {
+        "author": {
+          "id": "MDQ6VXNlcjUwNDg3NDY3",
+          "is_bot": false,
+          "login": "134130",
+          "name": "JiHwan Oh"
+        },
+        "baseRefName": "main",
+        "commits": [
+          {
+            "authoredDate": "2025-08-20T07:12:46Z",
+            "authors": [
+              {
+                "email": "sapindus.hwan@gmail.com",
+                "id": "MDQ6VXNlcjUwNDg3NDY3",
+                "login": "134130",
+                "name": "JiHwan Oh"
+              }
+            ],
+            "committedDate": "2025-08-20T07:12:46Z",
+            "messageBody": "",
+            "messageHeadline": "foo",
+            "oid": "c90c2270541813477997ffeb466612ed1046d60b"
+          }
+        ],
+        "headRefName": "stack-1",
+        "headRepository": {
+          "id": "R_kgDOPg9I-g",
+          "name": "test-domino"
+        },
+        "isDraft": false,
+        "mergeCommit": {
+          "oid": "4f1aff22b2cc61a4b8ad53a091b3e99e6fc1a050"
+        },
+        "number": 12,
+        "state": "MERGED",
+        "title": "foo",
+        "url": "https://github.com/134130/test-domino/pull/12"
+      },
+      {
+        "author": {
+          "id": "MDQ6VXNlcjUwNDg3NDY3",
+          "is_bot": false,
+          "login": "134130",
+          "name": "JiHwan Oh"
+        },
+        "baseRefName": "main",
+        "commits": [
+          {
+            "authoredDate": "2025-08-20T06:22:08Z",
+            "authors": [
+              {
+                "email": "sapindus.hwan@gmail.com",
+                "id": "MDQ6VXNlcjUwNDg3NDY3",
+                "login": "134130",
+                "name": "JiHwan Oh"
+              }
+            ],
+            "committedDate": "2025-08-20T06:22:08Z",
+            "messageBody": "",
+            "messageHeadline": "foo",
+            "oid": "5675286e9f714e9b7377345ae09f7d0815824a71"
+          }
+        ],
+        "headRefName": "stack-1",
+        "headRepository": {
+          "id": "R_kgDOPg9I-g",
+          "name": "test-domino"
+        },
+        "isDraft": false,
+        "mergeCommit": {
+          "oid": "77b3bac22bb0d19aa71b108588409921aadd727f"
+        },
+        "number": 8,
+        "state": "MERGED",
+        "title": "foo",
+        "url": "https://github.com/134130/test-domino/pull/8"
+      },
+      {
+        "author": {
+          "id": "MDQ6VXNlcjUwNDg3NDY3",
+          "is_bot": false,
+          "login": "134130",
+          "name": "JiHwan Oh"
+        },
+        "baseRefName": "main",
+        "commits": [
+          {
+            "authoredDate": "2025-08-20T06:14:30Z",
+            "authors": [
+              {
+                "email": "sapindus.hwan@gmail.com",
+                "id": "MDQ6VXNlcjUwNDg3NDY3",
+                "login": "134130",
+                "name": "JiHwan Oh"
+              }
+            ],
+            "committedDate": "2025-08-20T06:14:30Z",
+            "messageBody": "",
+            "messageHeadline": "foo",
+            "oid": "11953e9dbecfe6143656b7f7776888b4cf7f9929"
+          }
+        ],
+        "headRefName": "stack-1",
+        "headRepository": {
+          "id": "R_kgDOPg9I-g",
+          "name": "test-domino"
+        },
+        "isDraft": false,
+        "mergeCommit": {
+          "oid": "e1c21e0749c2578d3968cd07e47397c1af2dc83a"
+        },
+        "number": 5,
+        "state": "MERGED",
+        "title": "foo",
+        "url": "https://github.com/134130/test-domino/pull/5"
+      },
+      {
+        "author": {
+          "id": "MDQ6VXNlcjUwNDg3NDY3",
+          "is_bot": false,
+          "login": "134130",
+          "name": "JiHwan Oh"
+        },
+        "baseRefName": "main",
+        "commits": [
+          {
+            "authoredDate": "2025-08-20T06:03:31Z",
+            "authors": [
+              {
+                "email": "sapindus.hwan@gmail.com",
+                "id": "MDQ6VXNlcjUwNDg3NDY3",
+                "login": "134130",
+                "name": "JiHwan Oh"
+              }
+            ],
+            "committedDate": "2025-08-20T06:03:31Z",
+            "messageBody": "",
+            "messageHeadline": "foo",
+            "oid": "e512602c242d5ff81742f2083778c7b6c2067dcc"
+          }
+        ],
+        "headRefName": "stack-1",
+        "headRepository": {
+          "id": "R_kgDOPg9I-g",
+          "name": "test-domino"
+        },
+        "isDraft": false,
+        "mergeCommit": {
+          "oid": "24dd7297f0137ee836c419ecf582335c14cca874"
+        },
+        "number": 1,
+        "state": "MERGED",
+        "title": "foo",
+        "url": "https://github.com/134130/test-domino/pull/1"
+      }
+    ]

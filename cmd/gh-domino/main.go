@@ -1,0 +1,32 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/signal"
+
+	"github.com/134130/gh-domino/internal/domino"
+)
+
+func stderr(msg string, args ...interface{}) {
+	_, _ = fmt.Fprintf(os.Stderr, msg, args...)
+}
+
+func main() {
+	cfg, err := domino.ParseConfig()
+	if err != nil {
+		stderr(err.Error())
+		os.Exit(1)
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	os.Chdir("/Users/cooper/development/test-domino")
+
+	if err := domino.Run(ctx, cfg); err != nil {
+		stderr(err.Error() + "\n")
+		os.Exit(1)
+	}
+}
