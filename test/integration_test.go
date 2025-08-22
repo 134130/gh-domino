@@ -58,6 +58,19 @@ Dry run mode enabled. The following PRs would be rebased:
   #74 baz (stack-2 ← stack-3)
 `,
 	}, {
+		name: "test-multiple",
+		expected: `✔ Fetching pull requests... done
+Pull Requests
+├─  #78 foo (main ← stack-1)
+│   └─  #79 bar (stack-1 ← stack-2)
+│       └─  #80 baz (stack-2 ← stack-3)
+└─  #82 bbb (feature-a ← feature-b) [was on #81]
+    └─  #83 ccc (feature-b ← feature-c)
+Dry run mode enabled. The following PRs would be rebased:
+  #82 bbb (feature-a ← feature-b) (update base branch to main)
+  #83 ccc (feature-b ← feature-c)
+`,
+	}, {
 		name: "test-rebase-1",
 		expected: `✔ Fetching pull requests... done
 Pull Requests

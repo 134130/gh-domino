@@ -2,25 +2,13 @@
 
 A `gh` CLI extension to manage stacked pull requests like dominoes.
 
-## Description
+## What is it?
 
-Managing stacked pull requests (i.e., a series of PRs that depend on each other) can be cumbersome. When the base branch of a stack is updated, you often need to manually rebase each PR in the chain.
+When working with a chain of dependent pull requests (stacked PRs), merging the first PR in the stack breaks the chain for the others. You then have to manually rebase each subsequent PR, which can be tedious.
 
-`gh-domino` simplifies this process by automating the synchronization of stacked PRs. It intelligently detects the chain of PRs, rebases them sequentially, and updates the corresponding pull requests on GitHub.
-
-## Broken PR Detection Logic
-
-`gh-domino` identifies a "Broken PR" that needs attention. A "Broken PR" is one whose base branch is either already merged or has diverged (e.g., due to a rebase/force-push), breaking the dependency chain.
-
-The detection logic follows this flowchart:
-
-```mermaid
-TODO
-```
+`gh-domino` automates this process. It detects when a PR in a stack has been merged and automatically rebases the rest of the PRs in the chain for you.
 
 ## Installation
-
-You can install this extension using the official `gh` CLI:
 
 ```bash
 gh extension install 134130/gh-domino
@@ -28,14 +16,39 @@ gh extension install 134130/gh-domino
 
 ## Usage
 
-Navigate to your git repository where you have stacked pull requests. Then, run the following command:
+Navigate to your repository and run:
 
 ```bash
-gh domino
+gh domino [--auto] [--dry-run]
 ```
 
-This command will:
-1.  Identify the current PR stack based on your branch.
-2.  Perform a `git rebase` for each branch in the stack.
-3.  Force-push the updated branches.
-4.  Update the corresponding pull requests on GitHub.
+### Options
+
+- `--auto`: Automatically rebase the PRs without prompting for confirmation.
+- `--dry-run`: Show what would happen without making any changes.
+
+### Example
+
+Imagine you have a stack of PRs: `#2` is based on `#1`, and `#3` is based on `#2`.
+
+```
+#1: feature-a (main ← feature-a)
+└─ #2: feature-b (feature-a ← feature-b)
+   └─ #3: feature-c (feature-b ← feature-c)
+```
+
+After you merge `#1`, the base of `#2` is now outdated. Running `gh domino` will detect this:
+
+```
+✔ Fetching pull requests... done
+Pull Requests
+└─  #2 feature-b (feature-a ← feature-b) [was on #1]
+    └─  #3 feature-c (feature-b ← feature-c)
+Dry run mode enabled. The following PRs would be rebased:
+  #2 feature-b (feature-a ← feature-b) (update base branch to main)
+  #3 feature-c (feature-b ← feature-c)
+```
+
+`gh-domino` correctly identifies that `#2` needs its base updated to `main` and that `#3` needs to be rebased onto the new `#2`.
+
+The tool works with all of GitHub's merge strategies (Merge Commit, Rebase and Merge, and Squash and Merge) automatically.
