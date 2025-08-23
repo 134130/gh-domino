@@ -11,12 +11,12 @@ import (
 	"github.com/134130/gh-domino/internal/domino"
 )
 
-func TestIntegration(t *testing.T) {
+func TestDryRun(t *testing.T) {
 	testcases := []struct {
 		name     string
 		expected string
 	}{{
-		name: "test-merge-commit-1",
+		name: "test-dry-run-merge-commit-1",
 		expected: `✔ Fetching pull requests...
 Pull Requests
 └─  #56 bar (stack-1 ← stack-2) [was on #55]
@@ -27,7 +27,7 @@ Dry run mode enabled. The following PRs would be rebased:
   #57 baz (stack-2 ← stack-3)
 `,
 	}, {
-		name: "test-merge-commit-2",
+		name: "test-dry-run-merge-commit-2",
 		expected: `✔ Fetching pull requests...
 Pull Requests
 └─  #56 bar (stack-1 ← stack-2) [was on #55]
@@ -38,7 +38,7 @@ Dry run mode enabled. The following PRs would be rebased:
   #57 baz (stack-2 ← stack-3)
 `,
 	}, {
-		name: "test-merge-commit-hard-1",
+		name: "test-dry-run-merge-commit-hard-1",
 		expected: `✔ Fetching pull requests...
 Pull Requests
 └─  #62 bar (stack-1 ← stack-2) [was on #61]
@@ -48,7 +48,7 @@ Dry run mode enabled. The following PRs would be rebased:
   #62 bar (stack-1 ← stack-2) (update base branch to main)
   #63 baz (stack-2 ← stack-3)
 `}, {
-		name: "test-merge-commit-hard-2",
+		name: "test-dry-run-merge-commit-hard-2",
 		expected: `✔ Fetching pull requests...
 Pull Requests
 └─  #73 bar (stack-1 ← stack-2) [was on #72]
@@ -59,7 +59,7 @@ Dry run mode enabled. The following PRs would be rebased:
   #74 baz (stack-2 ← stack-3)
 `,
 	}, {
-		name: "test-multiple",
+		name: "test-dry-run-multiple",
 		expected: `✔ Fetching pull requests...
 Pull Requests
 ├─  #78 foo (main ← stack-1)
@@ -73,7 +73,7 @@ Dry run mode enabled. The following PRs would be rebased:
   #83 ccc (feature-b ← feature-c)
 `,
 	}, {
-		name: "test-rebase-1",
+		name: "test-dry-run-rebase-1",
 		expected: `✔ Fetching pull requests...
 Pull Requests
 └─  #59 bar (stack-1 ← stack-2) [was on #58]
@@ -84,7 +84,7 @@ Dry run mode enabled. The following PRs would be rebased:
   #60 baz (stack-2 ← stack-3)
 `,
 	}, {
-		name: "test-rebase-hard-1",
+		name: "test-dry-run-rebase-hard-1",
 		expected: `✔ Fetching pull requests...
 Pull Requests
 └─  #65 bar (stack-1 ← stack-2) [was on #64]
@@ -94,7 +94,7 @@ Dry run mode enabled. The following PRs would be rebased:
   #65 bar (stack-1 ← stack-2) (update base branch to main)
   #66 baz (stack-2 ← stack-3)
 `}, {
-		name: "test-rebase-hard-2",
+		name: "test-dry-run-rebase-hard-2",
 		expected: `✔ Fetching pull requests...
 Pull Requests
 └─  #76 bar (stack-1 ← stack-2) [was on #75]
@@ -105,7 +105,7 @@ Dry run mode enabled. The following PRs would be rebased:
   #77 baz (stack-2 ← stack-3)
 `,
 	}, {
-		name: "test-squash-1",
+		name: "test-dry-run-squash-1",
 		expected: `✔ Fetching pull requests...
 Pull Requests
 └─  #51 foo (main ← stack-1)
@@ -116,7 +116,7 @@ Dry run mode enabled. The following PRs would be rebased:
 ✔ No broken PRs found.
 `,
 	}, {
-		name: "test-squash-2",
+		name: "test-dry-run-squash-2",
 		expected: `✔ Fetching pull requests...
 Pull Requests
 └─  #52 bar (stack-1 ← stack-2) [was on #51]
@@ -127,7 +127,7 @@ Dry run mode enabled. The following PRs would be rebased:
   #53 baz (stack-2 ← stack-3)
 `,
 	}, {
-		name: "test-squash-3",
+		name: "test-dry-run-squash-3",
 		expected: `✔ Fetching pull requests...
 Pull Requests
 └─  #52 bar (main ← stack-2) [was on #51]
@@ -138,7 +138,7 @@ Dry run mode enabled. The following PRs would be rebased:
   #53 baz (stack-2 ← stack-3)
 `,
 	}, {
-		name: "test-squash-hard-1",
+		name: "test-dry-run-squash-hard-1",
 		expected: `✔ Fetching pull requests...
 Pull Requests
 └─  #68 bar (stack-1 ← stack-2) [was on #67]
@@ -149,7 +149,7 @@ Dry run mode enabled. The following PRs would be rebased:
   #69 baz (stack-2 ← stack-3)
 `,
 	}, {
-		name: "test-squash-hard-2",
+		name: "test-dry-run-squash-hard-2",
 		expected: `✔ Fetching pull requests...
 Pull Requests
 └─  #68 bar (main ← stack-2) [was on #67]
