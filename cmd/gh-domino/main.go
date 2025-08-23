@@ -16,7 +16,7 @@ func stderr(msg string, args ...interface{}) {
 func main() {
 	cfg, err := domino.ParseConfig()
 	if err != nil {
-		stderr(err.Error())
+		stderr("%s", err.Error())
 		os.Exit(1)
 	}
 
@@ -24,7 +24,7 @@ func main() {
 	defer stop()
 
 	if err := domino.Run(ctx, cfg); err != nil {
-		stderr(err.Error() + "\n")
+		stderr("%s\n", err.Error())
 		os.Exit(1)
 	}
 }

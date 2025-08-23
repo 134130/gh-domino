@@ -9,7 +9,7 @@ import (
 	"github.com/134130/gh-domino/git"
 	"github.com/134130/gh-domino/gitobj"
 	"github.com/134130/gh-domino/internal/color"
-	"github.com/134130/gh-domino/internal/queue"
+
 	"github.com/134130/gh-domino/internal/spinner"
 	"github.com/134130/gh-domino/internal/stackedpr"
 	"github.com/134130/gh-domino/internal/util"
@@ -84,48 +84,70 @@ func Run(ctx context.Context, cfg Config) error {
 		mergedPRsByHeadRef[pr.HeadRefName] = pr
 	}
 
-	que := queue.NewFromSlice(roots)
 	processedPRs := make(map[int]bool)
-	foundBrokenPR := false
 
-	for !que.IsEmpty() {
-		node := que.MustDequeue()
-		pr := node.Value
-
-		// Skip already processed PRs
-		if processedPRs[pr.Number] {
-			continue
-		}
-		processedPRs[pr.Number] = true
-
-		isBroken, onto, err := determinePRState(ctx, pr, prMap, mergedPRsByHeadRef, prHeadShas, cfg, mergedPRs)
-		if err != nil {
-			stderr("Error determining state for PR %s: %v\n", pr.PRNumberString(), err)
-			continue
-		}
-
-		if isBroken {
-			foundBrokenPR = true
-			if onto == "" {
-				onto = pr.BaseRefName
-			}
-			brokenPR := stackedpr.RebaseInfo{PR: pr, Onto: onto}
-			if err := handleBrokenPR(ctx, brokenPR, cfg, prHeadShas); err != nil {
-				failure(fmt.Sprintf("Failed to handle broken PR %s: %v\n", brokenPR.PR.PRNumberString(), err))
-				os.Exit(1)
-			}
-		}
-
-		for _, child := range node.Children {
-			que.Enqueue(child)
-		}
+	totalProcessed := 0
+	for _, root := range roots {
+		totalProcessed += processDependencyTree(ctx, root, prMap, mergedPRsByHeadRef, prHeadShas, cfg, mergedPRs, processedPRs)
 	}
 
-	if !foundBrokenPR {
+	if totalProcessed == 0 {
 		success("No broken PRs found.")
+	} else {
+		if *cfg.DryRun {
+			stderr("\nTotal PRs that would be rebased: %d\n", totalProcessed)
+		} else {
+			success(fmt.Sprintf("Total PRs rebased: %d", totalProcessed))
+		}
 	}
 
 	return nil
+}
+
+// processDependencyTree recursively traverses the dependency tree and handles broken PRs.
+func processDependencyTree(
+	ctx context.Context,
+	node *stackedpr.Node,
+	prMap map[string]gitobj.PullRequest,
+	mergedPRsByHeadRef map[string]gitobj.PullRequest,
+	prHeadShas map[string]string,
+	cfg Config,
+	mergedPRs []gitobj.PullRequest,
+	processedPRs map[int]bool,
+) int {
+	if node == nil {
+		return 0
+	}
+	pr := node.Value
+
+	// Skip already processed PRs
+	if processedPRs[pr.Number] {
+		return 0
+	}
+	processedPRs[pr.Number] = true
+
+	totalProcessed := 0
+
+	isBroken, onto, err := determinePRState(ctx, pr, prMap, mergedPRsByHeadRef, prHeadShas, cfg, mergedPRs)
+	if err != nil {
+		stderr("Error determining state for PR %s: %v\n", pr.PRNumberString(), err)
+		// Continue to children even if parent has an error
+	} else if isBroken {
+		if onto == "" {
+			onto = pr.BaseRefName
+		}
+		brokenPR := stackedpr.RebaseInfo{PR: pr, Onto: onto}
+		if err := handleBrokenPR(ctx, brokenPR, cfg, prHeadShas); err != nil {
+			failure(fmt.Sprintf("Failed to handle broken PR %s: %v\n", brokenPR.PR.PRNumberString(), err))
+			os.Exit(1)
+		}
+		totalProcessed++
+	}
+
+	for _, child := range node.Children {
+		totalProcessed += processDependencyTree(ctx, child, prMap, mergedPRsByHeadRef, prHeadShas, cfg, mergedPRs, processedPRs)
+	}
+	return totalProcessed
 }
 
 // determinePRState checks if a pull request is "broken" and needs to be rebased.
