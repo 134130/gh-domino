@@ -1,2 +1,13 @@
 [tools]
 go = '1.25'
+goreleaser = "latest"
+
+[tasks.release]
+run = """
+#!/usr/bin/env bash
+set -eou pipefail
+
+export GITHUB_TOKEN=$(gh auth token)
+
+goreleaser
+"""
