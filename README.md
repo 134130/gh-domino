@@ -85,5 +85,5 @@ This process continues down the stack, ensuring that each dependent PR is correc
 
 ## Related
 
-- [gh-cherry-pick](https://github.com/134130/gh-cherry-pick) - A GitHub CLI extension to cherry-pick pull requests to another branch.
-- [gh-poi](https://github.com/seachicken/gh-poi) A GitHub CLI extension to safely clean up local branches you no longer need.
+- [gh-cherry-pick](https://github.com/134130/gh-cherry-pick) - A GitHub CLI extension to cherry-pick pull requests to another branch
+- [gh-poi](https://github.com/seachicken/gh-poi) - A GitHub CLI extension to safely clean up local branches you no longer need
