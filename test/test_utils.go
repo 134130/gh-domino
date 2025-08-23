@@ -1,6 +1,7 @@
 package test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/goccy/go-yaml"
 
 	"github.com/134130/gh-domino/git"
@@ -29,6 +31,29 @@ type YAMLRunner struct {
 	Commands []YAMLCommand
 	used     map[int]struct{}
 }
+
+func NewYAMLRunner(ctx context.Context, filename string) (*YAMLRunner, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get working directory: %w", err)
+	}
+	file, err := os.Open(filepath.Join(dir, "../", filename))
+	if err != nil {
+		return nil, fmt.Errorf("failed to open test data file: %w", err)
+	}
+
+	var runners []YAMLCommand
+	if err := yaml.NewDecoder(file).DecodeContext(ctx, &runners); err != nil {
+		return nil, fmt.Errorf("failed to decode YAML commands: %w", err)
+	}
+
+	return &YAMLRunner{
+		Commands: runners,
+		used:     make(map[int]struct{}),
+	}, nil
+}
+
+var _ git.Runner = (*YAMLRunner)(nil)
 
 func (r *YAMLRunner) Run(ctx context.Context, cmd string, args []string, mods ...git.CommandModifier) error {
 	execCmd := &exec.Cmd{}
@@ -86,25 +111,80 @@ func (r *YAMLRunner) Run(ctx context.Context, cmd string, args []string, mods ..
 	return nil
 }
 
-func NewYAMLRunner(ctx context.Context, filename string) (*YAMLRunner, error) {
-	dir, err := os.Getwd()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get working directory: %w", err)
-	}
-	file, err := os.Open(filepath.Join(dir, "../", filename))
-	if err != nil {
-		return nil, fmt.Errorf("failed to open test data file: %w", err)
-	}
-
-	var runners []YAMLCommand
-	if err := yaml.NewDecoder(file).DecodeContext(ctx, &runners); err != nil {
-		return nil, fmt.Errorf("failed to decode YAML commands: %w", err)
-	}
-
-	return &YAMLRunner{
-		Commands: runners,
-		used:     make(map[int]struct{}),
-	}, nil
+type LoggingRunner struct {
+	r git.Runner
 }
 
-var _ git.Runner = (*YAMLRunner)(nil)
+func NewLoggingRunner() *LoggingRunner {
+	return &LoggingRunner{r: &git.DefaultRunner{}}
+}
+
+var _ git.Runner = (*LoggingRunner)(nil)
+
+func (r *LoggingRunner) Run(ctx context.Context, cmd string, args []string, mods ...git.CommandModifier) error {
+	f, err := os.OpenFile("test_runner.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		panic(err)
+	}
+	defer f.Close()
+
+	_, _ = fmt.Fprintf(f, "- command: %s %s\n", cmd, strings.Join(args, " "))
+
+	stdout := bytes.NewBuffer(nil)
+	stderr := bytes.NewBuffer(nil)
+
+	mod := func(c *exec.Cmd) {
+		if c.Stdout != nil {
+			c.Stdout = io.MultiWriter(c.Stdout, stdout)
+		} else {
+			c.Stdout = stdout
+		}
+		if c.Stderr != nil {
+			c.Stderr = io.MultiWriter(c.Stderr, stderr)
+		} else {
+			c.Stderr = stderr
+		}
+	}
+
+	err = r.r.Run(ctx, cmd, args, append(mods, mod)...)
+
+	style := lipgloss.NewStyle().PaddingLeft(6)
+	writeYamlStr := func(label, content string) {
+		if len(content) == 0 {
+			return
+		}
+		if strings.ContainsRune(content, '\n') {
+			_, _ = fmt.Fprintf(f, "  %s: |\n", label)
+			_, _ = fmt.Fprintf(f, style.Render(content))
+		} else {
+			_, _ = fmt.Fprintf(f, "  %s: %s\n", label, strings.TrimSpace(content))
+		}
+	}
+
+	writeYamlStr("stdout", stdout.String())
+	writeYamlStr("stderr", stderr.String())
+
+	var exitCode int
+	if err != nil {
+		switch gErr := err.(type) {
+		case *git.GitError:
+			exitCode = gErr.ExitCode
+		case *git.GHError:
+			exitCode = gErr.ExitCode
+		default:
+			exitCode = 1
+		}
+	} else {
+		exitCode = 0
+	}
+
+	if exitCode != 0 {
+		_, _ = fmt.Fprintf(f, "  exitCode: %d\n", exitCode)
+	} else {
+		if stdout.Len() == 0 && stderr.Len() == 0 {
+			_, _ = fmt.Fprintf(f, "  exitCode: %d\n", exitCode)
+		}
+	}
+
+	return err
+}
