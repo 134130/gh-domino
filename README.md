@@ -12,6 +12,14 @@ the rest of the PRs in the chain for you.
 
 The tool works with all of GitHub's merge strategies (Merge Commit, Squash and Merge, and Rebase and Merge) automatically.
 
+## What's different from other tools?
+
+There are several tools that help manage stacked PRs, but `gh-domino` has some unique features:
+
+- **Zero Configuration**: No setup or configuration is needed. Just install the extension and run it in your repository.
+- **No State Management**: It doesn't require any special branch naming conventions or local state files. It works with your existing branches and PRs.
+- **No Additional Descriptions on PRs**: It doesn't require you to add special tags or descriptions to your PRs.
+
 ## Installation
 
 ```bash
