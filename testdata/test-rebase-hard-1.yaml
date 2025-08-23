@@ -31,6 +31,8 @@
   stdout: 9f81187584cdd75354ccbff326c34b1c943bc016
 - command: "git merge-base origin/main b415deede0d91d00d3914b969293af54b047b04f"
   stdout: 9f81187584cdd75354ccbff326c34b1c943bc016
+- command: "git merge-base origin/stack-2 7973a46ed1e30f6b94081ef7aa35766bc59ba6f7"
+  stdout: b415deede0d91d00d3914b969293af54b047b04f
 - command: "git log --pretty=%H 9f81187584cdd75354ccbff326c34b1c943bc016..origin/main"
   stdout: |
     8288b7e40e9a22df89a887e680c5a93a0a89ed48

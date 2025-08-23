@@ -32,6 +32,8 @@
   stdout: 909d871a7213af3fde9dc48c0103fa23d08b2de5
 - command: "git log --pretty=%H 909d871a7213af3fde9dc48c0103fa23d08b2de5..origin/main"
   stdout: bb05d0614ec671cc6f546411ce416537a9ac9d08
+- command: "git merge-base origin/stack-2 570aeb945d9518145c3dabf153a65a4ee864a136"
+  stdout: d878db1ed89159318c518fd53a96e75851ff91db
 - command: "gh pr list --author @me --json number,title,url,author,state,isDraft,mergeCommit,baseRefName,headRefName,headRepository,commits"
   stdout: |
     [

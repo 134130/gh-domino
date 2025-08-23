@@ -35,6 +35,8 @@
   stdout: 4c86e4e8449898133ea698c2f92c66b3d5afdf06
 - command: "git merge-base origin/main 6cc28b05cc14b5dbd796fea69c9fb870a08465d7"
   stdout: 0b4e4786fd1f6fb13c74e64114943e5c15be464c
+- command: "git merge-base origin/stack-2 dbafc63f0c84ce759b980eaa9df6517830a4ebe1"
+  stdout: 6cc28b05cc14b5dbd796fea69c9fb870a08465d7
 - command: "git merge-base --is-ancestor fd5d5345e172463ab8eb6e4f07380eccf02712f6 6cc28b05cc14b5dbd796fea69c9fb870a08465d7"
   exitCode: 1
 - command: "gh pr list --author @me --json number,title,url,author,state,isDraft,mergeCommit,baseRefName,headRefName,headRepository,commits"

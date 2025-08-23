@@ -68,6 +68,10 @@
   exitCode: 1
 - command: "git merge-base --is-ancestor 1829aa37dade185d5191b83b6094b0355d3c413f 909d871a7213af3fde9dc48c0103fa23d08b2de5"
   exitCode: 1
+- command: "git merge-base origin/stack-1 d878db1ed89159318c518fd53a96e75851ff91db"
+  stdout: 909d871a7213af3fde9dc48c0103fa23d08b2de5
+- command: "git merge-base origin/stack-2 570aeb945d9518145c3dabf153a65a4ee864a136"
+  stdout: d878db1ed89159318c518fd53a96e75851ff91db
 - command: "git log --pretty=%H 540c30ffb8ff34a17f49cd45280e2ec622a3ff26..origin/main"
   stdout: 
 - command: "gh pr list --author @me --json number,title,url,author,state,isDraft,mergeCommit,baseRefName,headRefName,headRepository,commits"

@@ -93,12 +93,6 @@ func Run(ctx context.Context, cfg Config) error {
 
 	if totalProcessed == 0 {
 		success("No broken PRs found.")
-	} else {
-		if *cfg.DryRun {
-			stderr("\nTotal PRs that would be rebased: %d\n", totalProcessed)
-		} else {
-			success(fmt.Sprintf("Total PRs rebased: %d", totalProcessed))
-		}
 	}
 
 	return nil
@@ -165,33 +159,49 @@ func determinePRState(
 	cfg Config,
 	mergedPRs []gitobj.PullRequest,
 ) (isBroken bool, onto string, err error) {
-	isParentRebasedInDryRun := false
-	if parentPR, ok := prMap[pr.BaseRefName]; ok {
-		// The base is another PR in the stack. Check its (potentially updated) SHA.
-		baseSha := prHeadShas[parentPR.HeadRefName]
-		if *cfg.DryRun && baseSha == "dummy-sha-after-rebase" {
-			isParentRebasedInDryRun = true
-		}
-	} else {
-		// The base is a regular branch. Verify its SHA exists.
-		if _, err := git.RevParse(ctx, "origin/"+pr.BaseRefName); err != nil {
-			return false, "", fmt.Errorf("could not get SHA for base %s: %v", pr.BaseRefName, err)
-		}
-	}
-
-	// Case 1: The PR's base branch is a merged PR's head branch.
-	if _, ok := prMap[pr.BaseRefName]; !ok { // It's a root PR
-		if mergedBasePR, ok := mergedPRsByHeadRef[pr.BaseRefName]; ok {
+	// --- Check 1: Is the base a merged PR? ---
+	// This applies only to root PRs in a stack.
+	if _, isStackedPR := prMap[pr.BaseRefName]; !isStackedPR {
+		if mergedBasePR, isMerged := mergedPRsByHeadRef[pr.BaseRefName]; isMerged {
 			return true, mergedBasePR.BaseRefName, nil
 		}
 	}
 
-	// Case 2: The parent PR was rebased in a dry run.
-	if isParentRebasedInDryRun {
+	// --- Check 2: Has the PR diverged from its base? ---
+	// This can happen if the base branch itself was updated (e.g., parent PR rebased).
+	isDiverged := false
+	if _, ok := prMap[pr.BaseRefName]; ok { // Only check divergence for stacked PRs
+		baseShaOnOrigin, err := git.RevParse(ctx, "origin/"+pr.BaseRefName)
+		if err != nil {
+			return false, "", fmt.Errorf("could not get SHA for base %s: %v", pr.BaseRefName, err)
+		}
+		headSha := prHeadShas[pr.HeadRefName]
+		mergeBase, err := git.GetMergeBase(ctx, "origin/"+pr.BaseRefName, headSha)
+		if err != nil {
+			return false, "", fmt.Errorf("could not get merge base for %s and %s: %v", pr.BaseRefName, pr.HeadRefName, err)
+		}
+		if mergeBase != baseShaOnOrigin {
+			isDiverged = true
+		}
+	}
+
+	// --- Check 3: In a dry run, was the parent PR "rebased" earlier in this run? ---
+	isParentRebasedInDryRun := false
+	if *cfg.DryRun {
+		if parentPR, ok := prMap[pr.BaseRefName]; ok {
+			baseShaInMap := prHeadShas[parentPR.HeadRefName]
+			if baseShaInMap == "dummy-sha-after-rebase" {
+				isParentRebasedInDryRun = true
+			}
+		}
+	}
+
+	if isDiverged || isParentRebasedInDryRun {
 		return true, "", nil // 'onto' will be set to pr.BaseRefName by the caller
 	}
 
-	// Case 3: The PR has diverged from the default branch.
+	// --- Check 4: Does this root PR contain commits from another merged PR? ---
+	// This handles cases where a PR was based on another branch that got merged while this PR was open.
 	defaultBranch, err := git.GetDefaultBranch(ctx)
 	if err != nil {
 		return false, "", fmt.Errorf("could not get default branch: %v", err)

@@ -27,6 +27,8 @@
   stdout: b687314a756f322db5671025ec25f00c95e4e21b
 - command: "git rev-parse origin/stack-3"
   stdout: cf873dd44d61285d3e93d403a7fa6560c0ca9071
+- command: "git merge-base origin/stack-2 cf873dd44d61285d3e93d403a7fa6560c0ca9071"
+  stdout: a91451658452b935ee64d8d5b33107ed1aa929a0
 - command: "gh pr list --author @me --json number,title,url,author,state,isDraft,mergeCommit,baseRefName,headRefName,headRepository,commits"
   stdout: |
     [
