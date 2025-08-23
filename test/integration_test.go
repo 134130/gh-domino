@@ -184,7 +184,7 @@ func TestAuto(t *testing.T) {
 		name     string
 		expected string
 	}{{
-		name: "test-auto-merge-commit-1",
+		name: "test-auto-merge-1",
 		expected: `✔ Fetching pull requests...
 Pull Requests
 └─  #91 bar (stack-1 ← stack-2) [was on #90]
@@ -197,7 +197,7 @@ Pull Requests
 ✔ Pushing #92...
 `,
 	}, {
-		name: "test-auto-merge-commit-2",
+		name: "test-auto-merge-2",
 		expected: `✔ Fetching pull requests...
 Pull Requests
 └─  #94 bar (stack-1 ← stack-2) [was on #93]
