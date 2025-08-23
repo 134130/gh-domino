@@ -23,8 +23,6 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	os.Chdir("/Users/cooper/development/test-domino")
-
 	if err := domino.Run(ctx, cfg); err != nil {
 		stderr(err.Error() + "\n")
 		os.Exit(1)

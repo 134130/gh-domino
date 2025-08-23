@@ -2,7 +2,6 @@ package test
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 
@@ -13,8 +12,6 @@ import (
 )
 
 func TestIntegration(t *testing.T) {
-	os.Chdir("/Users/cooper/development/test-domino")
-
 	testcases := []struct {
 		name     string
 		expected string

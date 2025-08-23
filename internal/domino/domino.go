@@ -58,7 +58,8 @@ func Run(ctx context.Context, cfg Config) error {
 	sp.Stop()
 	stderr("%s Fetching pull requests... done\n", color.Green("✔"))
 
-	stderr(stackedpr.RenderDependencyTree(roots) + "\n")
+	stderr(stackedpr.RenderDependencyTree(roots))
+	stderr("\n\n")
 
 	if *cfg.DryRun {
 		stderr("Dry run mode enabled. The following PRs would be rebased:\n")
@@ -192,6 +193,19 @@ func Run(ctx context.Context, cfg Config) error {
 				}
 				sp.Stop()
 				stderr("%s %s\n", color.Green("✔"), msg)
+
+				if !*cfg.Auto {
+					stderr("Rebase completed successfully.\n")
+					response, err := util.AskForConfirmation("Continue to push the rebased branch and update the PR?")
+					if err != nil {
+						stderr("Error reading input: %s\n", err.Error())
+						os.Exit(1)
+					}
+					if !response {
+						stderr("Skipping push and PR update.\n")
+						continue
+					}
+				}
 
 				msg = fmt.Sprintf("Pushing the PR %s...", brokenPR.PR.PRNumberString())
 				sp = spinner.New(msg, cfg.Writer)
