@@ -52,7 +52,7 @@ if [[ "${OS}" == "unknown" || "${ARCH}" == "unknown" ]]; then
   (cd "${PROGRAM_ROOT}" && go build -o dist/gh-domino ./cmd/gh-domino)
   exec "${PROGRAM_ROOT}/dist/gh-domino" "$@"
 else
-  GH_DOMINO_VERSION="2.0.0"
+  GH_DOMINO_VERSION="1.0.0"
   curl -sSL "https://github.com/134130/gh-domino/releases/download/v${GH_DOMINO_VERSION}/gh-domino-${GH_DOMINO_VERSION}-${OS}-${ARCH}.tar.gz" | tar -xz -C "${PROGRAM_ROOT}/dist" gh-domino
   exec "${PROGRAM_ROOT}/dist/gh-domino" "$@"
 fi
