@@ -35,6 +35,18 @@ type PullRequest struct {
 	} `json:"mergeCommit"`
 	BaseRefName string `json:"baseRefName"`
 	HeadRefName string `json:"headRefName"`
+	Commits     []struct {
+		Oid string `json:"oid"`
+	} `json:"commits"`
+}
+
+func (pr PullRequest) String() string {
+	return fmt.Sprintf("%s %s (%s ← %s)",
+		pr.PRNumberString(),
+		pr.Title,
+		color.Cyan(pr.BaseRefName),
+		color.Blue(pr.HeadRefName),
+	)
 }
 
 func (pr PullRequest) StateString() string {

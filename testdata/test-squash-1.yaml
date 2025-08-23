@@ -22,6 +22,8 @@
   stdout: d878db1ed89159318c518fd53a96e75851ff91db
 - command: "git rev-parse origin/stack-3"
   stdout: 570aeb945d9518145c3dabf153a65a4ee864a136
+- command: "git merge-base origin/main 909d871a7213af3fde9dc48c0103fa23d08b2de5"
+  stdout: 540c30ffb8ff34a17f49cd45280e2ec622a3ff26
 - command: "git merge-base --is-ancestor 540c30ffb8ff34a17f49cd45280e2ec622a3ff26 909d871a7213af3fde9dc48c0103fa23d08b2de5"
   exitCode: 0
 - command: "git merge-base --is-ancestor 909d871a7213af3fde9dc48c0103fa23d08b2de5 d878db1ed89159318c518fd53a96e75851ff91db"
@@ -30,9 +32,45 @@
   exitCode: 0
 - command: "git merge-base origin/main origin/stack-1"
   stdout: 540c30ffb8ff34a17f49cd45280e2ec622a3ff26
+- command: "git merge-base origin/main origin/stack-2"
+  stdout: 540c30ffb8ff34a17f49cd45280e2ec622a3ff26
+- command: "git merge-base origin/main d878db1ed89159318c518fd53a96e75851ff91db"
+  stdout: 540c30ffb8ff34a17f49cd45280e2ec622a3ff26
+- command: "git merge-base --is-ancestor 3e362d0ee180026b39865bed442073e339023c1b 909d871a7213af3fde9dc48c0103fa23d08b2de5"
+  exitCode: 1
+- command: "git merge-base --is-ancestor e512602c242d5ff81742f2083778c7b6c2067dcc 909d871a7213af3fde9dc48c0103fa23d08b2de5"
+  exitCode: 1
+- command: "git merge-base --is-ancestor 11953e9dbecfe6143656b7f7776888b4cf7f9929 909d871a7213af3fde9dc48c0103fa23d08b2de5"
+  exitCode: 1
+- command: "git merge-base --is-ancestor 5675286e9f714e9b7377345ae09f7d0815824a71 909d871a7213af3fde9dc48c0103fa23d08b2de5"
+  exitCode: 1
+- command: "git merge-base --is-ancestor c90c2270541813477997ffeb466612ed1046d60b 909d871a7213af3fde9dc48c0103fa23d08b2de5"
+  exitCode: 1
+- command: "git merge-base --is-ancestor ebfb020c109fc788ce8aa2d376e32495a7bbfa33 909d871a7213af3fde9dc48c0103fa23d08b2de5"
+  exitCode: 1
+- command: "git merge-base --is-ancestor 99b0fba9ac1294ccc4e31bba483d0c6ce2675792 909d871a7213af3fde9dc48c0103fa23d08b2de5"
+  exitCode: 1
+- command: "git merge-base --is-ancestor 4ee463ca727ed1fa075781cdd478bafe8c3e9a7d 909d871a7213af3fde9dc48c0103fa23d08b2de5"
+  exitCode: 1
+- command: "git merge-base --is-ancestor f9d7b529d0c1fe96e8b3d4aaf00756c30b803765 909d871a7213af3fde9dc48c0103fa23d08b2de5"
+  exitCode: 1
+- command: "git merge-base --is-ancestor 1d8bbe7d197e9d25e9df361fd2a3ecca3cb64c82 909d871a7213af3fde9dc48c0103fa23d08b2de5"
+  exitCode: 1
+- command: "git merge-base --is-ancestor 652471d49bca016e099f396e04ff028bd27c3ae5 909d871a7213af3fde9dc48c0103fa23d08b2de5"
+  exitCode: 1
+- command: "git merge-base --is-ancestor b79cd611f4ebb30b80df6077b225c240e70fd02f 909d871a7213af3fde9dc48c0103fa23d08b2de5"
+  exitCode: 1
+- command: "git merge-base --is-ancestor 39e71c8334a74423690aaa8a442896f350fd1f27 909d871a7213af3fde9dc48c0103fa23d08b2de5"
+  exitCode: 1
+- command: "git merge-base --is-ancestor fef7d5c1796f432cd536db9ad5541dbd7350874c 909d871a7213af3fde9dc48c0103fa23d08b2de5"
+  exitCode: 1
+- command: "git merge-base --is-ancestor 8f1c94f2a1503e2bddd006d16b54c58f4c522c10 909d871a7213af3fde9dc48c0103fa23d08b2de5"
+  exitCode: 1
+- command: "git merge-base --is-ancestor 1829aa37dade185d5191b83b6094b0355d3c413f 909d871a7213af3fde9dc48c0103fa23d08b2de5"
+  exitCode: 1
 - command: "git log --pretty=%H 540c30ffb8ff34a17f49cd45280e2ec622a3ff26..origin/main"
   stdout: 
-- command: "gh pr list --author @me --json number,title,url,author,state,isDraft,mergeCommit,baseRefName,headRefName,headRepository"
+- command: "gh pr list --author @me --json number,title,url,author,state,isDraft,mergeCommit,baseRefName,headRefName,headRepository,commits"
   stdout: |
     [
       {
@@ -43,6 +81,23 @@
           "name": "JiHwan Oh"
         },
         "baseRefName": "stack-2",
+        "commits": [
+          {
+            "authoredDate": "2025-08-22T12:24:22Z",
+            "authors": [
+              {
+                "email": "sapindus.hwan@gmail.com",
+                "id": "MDQ6VXNlcjUwNDg3NDY3",
+                "login": "134130",
+                "name": "JiHwan Oh"
+              }
+            ],
+            "committedDate": "2025-08-22T12:24:22Z",
+            "messageBody": "",
+            "messageHeadline": "baz",
+            "oid": "570aeb945d9518145c3dabf153a65a4ee864a136"
+          }
+        ],
         "headRefName": "stack-3",
         "headRepository": {
           "id": "R_kgDOPg9I-g",
@@ -63,6 +118,53 @@
           "name": "JiHwan Oh"
         },
         "baseRefName": "stack-1",
+        "commits": [
+          {
+            "authoredDate": "2025-08-20T05:52:32Z",
+            "authors": [
+              {
+                "email": "sapindus.hwan@gmail.com",
+                "id": "MDQ6VXNlcjUwNDg3NDY3",
+                "login": "134130",
+                "name": "JiHwan Oh"
+              }
+            ],
+            "committedDate": "2025-08-22T12:24:08Z",
+            "messageBody": "",
+            "messageHeadline": "init",
+            "oid": "540c30ffb8ff34a17f49cd45280e2ec622a3ff26"
+          },
+          {
+            "authoredDate": "2025-08-22T12:24:11Z",
+            "authors": [
+              {
+                "email": "sapindus.hwan@gmail.com",
+                "id": "MDQ6VXNlcjUwNDg3NDY3",
+                "login": "134130",
+                "name": "JiHwan Oh"
+              }
+            ],
+            "committedDate": "2025-08-22T12:24:11Z",
+            "messageBody": "",
+            "messageHeadline": "foo",
+            "oid": "909d871a7213af3fde9dc48c0103fa23d08b2de5"
+          },
+          {
+            "authoredDate": "2025-08-22T12:24:16Z",
+            "authors": [
+              {
+                "email": "sapindus.hwan@gmail.com",
+                "id": "MDQ6VXNlcjUwNDg3NDY3",
+                "login": "134130",
+                "name": "JiHwan Oh"
+              }
+            ],
+            "committedDate": "2025-08-22T12:24:16Z",
+            "messageBody": "",
+            "messageHeadline": "bar",
+            "oid": "d878db1ed89159318c518fd53a96e75851ff91db"
+          }
+        ],
         "headRefName": "stack-2",
         "headRepository": {
           "id": "R_kgDOPg9I-g",
@@ -83,6 +185,23 @@
           "name": "JiHwan Oh"
         },
         "baseRefName": "main",
+        "commits": [
+          {
+            "authoredDate": "2025-08-22T12:24:11Z",
+            "authors": [
+              {
+                "email": "sapindus.hwan@gmail.com",
+                "id": "MDQ6VXNlcjUwNDg3NDY3",
+                "login": "134130",
+                "name": "JiHwan Oh"
+              }
+            ],
+            "committedDate": "2025-08-22T12:24:11Z",
+            "messageBody": "",
+            "messageHeadline": "foo",
+            "oid": "909d871a7213af3fde9dc48c0103fa23d08b2de5"
+          }
+        ],
         "headRefName": "stack-1",
         "headRepository": {
           "id": "R_kgDOPg9I-g",

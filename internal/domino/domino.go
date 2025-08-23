@@ -41,7 +41,17 @@ func Run(ctx context.Context, cfg Config) error {
 		return fmt.Errorf("failed to get default branch: %s", err)
 	}
 
-	roots, err := stackedpr.BuildDependencyTree(ctx, prs, mergedPRs, defaultBranch)
+	prHeadShas := make(map[string]string)
+	for _, pr := range prs {
+		sha, err := git.RevParse(ctx, "origin/"+pr.HeadRefName)
+		if err != nil {
+			stderr("Could not get SHA for %s: %v\n", pr.HeadRefName, err)
+			os.Exit(1)
+		}
+		prHeadShas[pr.HeadRefName] = sha
+	}
+
+	roots, err := stackedpr.BuildDependencyTree(ctx, prs, mergedPRs, defaultBranch, prHeadShas)
 	if err != nil {
 		return err
 	}
@@ -61,15 +71,6 @@ func Run(ctx context.Context, cfg Config) error {
 	mergedPRsByHeadRef := make(map[string]gitobj.PullRequest)
 	for _, pr := range mergedPRs {
 		mergedPRsByHeadRef[pr.HeadRefName] = pr
-	}
-	prHeadShas := make(map[string]string)
-	for _, pr := range prs {
-		sha, err := git.RevParse(ctx, "origin/"+pr.HeadRefName)
-		if err != nil {
-			stderr("Could not get SHA for %s: %v\n", pr.HeadRefName, err)
-			os.Exit(1)
-		}
-		prHeadShas[pr.HeadRefName] = sha
 	}
 
 	queue := make([]*stackedpr.Node, 0, len(roots))
@@ -124,15 +125,25 @@ func Run(ctx context.Context, cfg Config) error {
 		if !isBroken {
 			if isParentRebasedInDryRun {
 				isBroken = true
-			} else {
+			} else if pr.BaseRefName == defaultBranch {
 				headSha := prHeadShas[pr.HeadRefName]
-				isAncestor, err := git.IsAncestor(ctx, baseSha, headSha)
+				mergeBase, err := git.GetMergeBase(ctx, "origin/"+defaultBranch, headSha)
 				if err != nil {
-					stderr("Could not check ancestor for %s: %v\n", pr.HeadRefName, err)
+					stderr("Could not get merge base for %s: %v\n", pr.HeadRefName, err)
 					continue
 				}
-				if !isAncestor {
-					isBroken = true
+
+				for _, mergedPR := range mergedPRs {
+					for _, commit := range mergedPR.Commits {
+						if mergeBase == commit.Oid {
+							isBroken = true
+							onto = mergedPR.BaseRefName
+							break
+						}
+					}
+					if isBroken {
+						break
+					}
 				}
 			}
 		}
@@ -151,12 +162,12 @@ func Run(ctx context.Context, cfg Config) error {
 				if brokenPR.PR.BaseRefName != brokenPR.Onto {
 					updateBaseBranchString = fmt.Sprintf(" (update base branch to %s)", color.Cyan(brokenPR.Onto))
 				}
-				stderr("  %s%s\n", brokenPR.String(), updateBaseBranchString)
+				stderr("  %s%s\n", brokenPR.PR.String(), updateBaseBranchString)
 				prHeadShas[pr.HeadRefName] = "dummy-sha-after-rebase"
 			} else {
 				// Real rebase logic...
 				if !*cfg.Auto {
-					stderr("PR %s needs to be rebased onto %s\n", brokenPR.String(), color.Cyan(brokenPR.Onto))
+					stderr("PR %s needs to be rebased onto %s\n", brokenPR.PR.String(), color.Cyan(brokenPR.Onto))
 					cmd := fmt.Sprintf("git rebase %s %s", "origin/"+brokenPR.Onto, brokenPR.PR.HeadRefName)
 					stderr("  Suggested command: %s\n", color.Yellow(cmd))
 					response, err := util.AskForConfirmation("Run this command?")
@@ -170,7 +181,7 @@ func Run(ctx context.Context, cfg Config) error {
 					}
 				}
 
-				msg := fmt.Sprintf("Rebasing the PR %s onto %s...", brokenPR.String(), color.Cyan(brokenPR.Onto))
+				msg := fmt.Sprintf("Rebasing the PR %s onto %s...", brokenPR.PR.String(), color.Cyan(brokenPR.Onto))
 				sp = spinner.New(msg, cfg.Writer)
 				sp.Start()
 

@@ -25,9 +25,19 @@
   stdout: 6cc28b05cc14b5dbd796fea69c9fb870a08465d7
 - command: "git rev-parse origin/stack-3"
   stdout: dbafc63f0c84ce759b980eaa9df6517830a4ebe1
+- command: "git merge-base origin/main origin/stack-2"
+  stdout: 0b4e4786fd1f6fb13c74e64114943e5c15be464c
+- command: "git log --pretty=%H 0b4e4786fd1f6fb13c74e64114943e5c15be464c..origin/main"
+  stdout: |
+    4c86e4e8449898133ea698c2f92c66b3d5afdf06
+    fd5d5345e172463ab8eb6e4f07380eccf02712f6
+- command: "git rev-parse origin/main"
+  stdout: 4c86e4e8449898133ea698c2f92c66b3d5afdf06
+- command: "git merge-base origin/main 6cc28b05cc14b5dbd796fea69c9fb870a08465d7"
+  stdout: 0b4e4786fd1f6fb13c74e64114943e5c15be464c
 - command: "git merge-base --is-ancestor fd5d5345e172463ab8eb6e4f07380eccf02712f6 6cc28b05cc14b5dbd796fea69c9fb870a08465d7"
   exitCode: 1
-- command: "gh pr list --author @me --json number,title,url,author,state,isDraft,mergeCommit,baseRefName,headRefName,headRepository"
+- command: "gh pr list --author @me --json number,title,url,author,state,isDraft,mergeCommit,baseRefName,headRefName,headRepository,commits"
   stdout: |
     [
       {
@@ -38,6 +48,23 @@
           "name": "JiHwan Oh"
         },
         "baseRefName": "stack-2",
+        "commits": [
+          {
+            "authoredDate": "2025-08-22T13:19:02Z",
+            "authors": [
+              {
+                "email": "sapindus.hwan@gmail.com",
+                "id": "MDQ6VXNlcjUwNDg3NDY3",
+                "login": "134130",
+                "name": "JiHwan Oh"
+              }
+            ],
+            "committedDate": "2025-08-22T13:35:53Z",
+            "messageBody": "",
+            "messageHeadline": "baz",
+            "oid": "ddc9a9ede9b28383cb8798ab9433965f0d6595ae"
+          }
+        ],
         "headRefName": "stack-3",
         "headRepository": {
           "id": "R_kgDOPg9I-g",
@@ -58,6 +85,23 @@
           "name": "JiHwan Oh"
         },
         "baseRefName": "stack-1",
+        "commits": [
+          {
+            "authoredDate": "2025-08-22T13:18:57Z",
+            "authors": [
+              {
+                "email": "sapindus.hwan@gmail.com",
+                "id": "MDQ6VXNlcjUwNDg3NDY3",
+                "login": "134130",
+                "name": "JiHwan Oh"
+              }
+            ],
+            "committedDate": "2025-08-22T13:35:48Z",
+            "messageBody": "",
+            "messageHeadline": "bar",
+            "oid": "be8fedef700af91d47764bef0f2822b8baf11e2a"
+          }
+        ],
         "headRefName": "stack-2",
         "headRepository": {
           "id": "R_kgDOPg9I-g",

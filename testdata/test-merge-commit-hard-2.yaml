@@ -29,7 +29,7 @@
   stdout: 956ff5331bbf2634f6b6869009ce61c7ab4dadd6
 - command: "git merge-base --is-ancestor 98981e7267f290a215b348ca0d50a84a4646c296 a75f3174bc4756fd7f1e3e7a1d523a9b88f398ea"
   exitCode: 1
-- command: "gh pr list --author @me --json number,title,url,author,state,isDraft,mergeCommit,baseRefName,headRefName,headRepository"
+- command: "gh pr list --author @me --json number,title,url,author,state,isDraft,mergeCommit,baseRefName,headRefName,headRepository,commits"
   stdout: |
     [
       {
@@ -40,6 +40,23 @@
           "name": "JiHwan Oh"
         },
         "baseRefName": "stack-2",
+        "commits": [
+          {
+            "authoredDate": "2025-08-22T14:05:14Z",
+            "authors": [
+              {
+                "email": "sapindus.hwan@gmail.com",
+                "id": "MDQ6VXNlcjUwNDg3NDY3",
+                "login": "134130",
+                "name": "JiHwan Oh"
+              }
+            ],
+            "committedDate": "2025-08-22T14:11:31Z",
+            "messageBody": "",
+            "messageHeadline": "baz",
+            "oid": "035e5660465f06d51aaab00e89a78991c1dbe6b0"
+          }
+        ],
         "headRefName": "stack-3",
         "headRepository": {
           "id": "R_kgDOPg9I-g",
@@ -60,6 +77,38 @@
           "name": "JiHwan Oh"
         },
         "baseRefName": "stack-1",
+        "commits": [
+          {
+            "authoredDate": "2025-08-22T14:05:09Z",
+            "authors": [
+              {
+                "email": "sapindus.hwan@gmail.com",
+                "id": "MDQ6VXNlcjUwNDg3NDY3",
+                "login": "134130",
+                "name": "JiHwan Oh"
+              }
+            ],
+            "committedDate": "2025-08-22T14:11:27Z",
+            "messageBody": "",
+            "messageHeadline": "bar",
+            "oid": "aa9fd86b86abba91b519872302d18766134d2e05"
+          },
+          {
+            "authoredDate": "2025-08-22T14:06:27Z",
+            "authors": [
+              {
+                "email": "sapindus.hwan@gmail.com",
+                "id": "MDQ6VXNlcjUwNDg3NDY3",
+                "login": "134130",
+                "name": "JiHwan Oh"
+              }
+            ],
+            "committedDate": "2025-08-22T14:11:27Z",
+            "messageBody": "",
+            "messageHeadline": "add BAR.md",
+            "oid": "5cbe3191ee5cde914fe76b1c2cd669695b8f68f8"
+          }
+        ],
         "headRefName": "stack-2",
         "headRepository": {
           "id": "R_kgDOPg9I-g",

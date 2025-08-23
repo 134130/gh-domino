@@ -16,7 +16,7 @@ func ListPullRequests(ctx context.Context) ([]gitobj.PullRequest, error) {
 	stdout := &bytes.Buffer{}
 	fields := []string{
 		"number", "title", "url", "author", "state", "isDraft",
-		"mergeCommit", "baseRefName", "headRefName", "headRepository",
+		"mergeCommit", "baseRefName", "headRefName", "headRepository", "commits",
 	}
 	listArgs := []string{
 		"pr", "list", "--author", "@me", "--json", strings.Join(fields, ","),

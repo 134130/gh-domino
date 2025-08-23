@@ -2,11 +2,9 @@ package stackedpr
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/134130/gh-domino/git"
 	"github.com/134130/gh-domino/gitobj"
-	"github.com/134130/gh-domino/internal/color"
 )
 
 type Node struct {
@@ -15,7 +13,7 @@ type Node struct {
 	OriginalBase *gitobj.PullRequest
 }
 
-func BuildDependencyTree(ctx context.Context, prs []gitobj.PullRequest, mergedPRs []gitobj.PullRequest, defaultBranch string) ([]*Node, error) {
+func BuildDependencyTree(ctx context.Context, prs []gitobj.PullRequest, mergedPRs []gitobj.PullRequest, defaultBranch string, prHeadShas map[string]string) ([]*Node, error) {
 	prMap := make(map[string]*Node)                           // HeadRefName -> Node
 	isChild := make(map[string]bool)                          // HeadRefName -> isChild
 	mergedPRsByHeadRef := make(map[string]gitobj.PullRequest) // HeadRefName -> Merged PR
@@ -68,38 +66,21 @@ func BuildDependencyTree(ctx context.Context, prs []gitobj.PullRequest, mergedPR
 			continue
 		}
 
-		// Base points to default branch
-		mergeBase, err := git.GetMergeBase(ctx, "origin/"+defaultBranch, "origin/"+node.Value.HeadRefName)
-		if err != nil {
-			// If we cannot find a merge base, skip this node
-			continue
-		}
-
-		// Heuristic: match merge-commit sha
-		newOnMainCommits, err := git.GetBranchCommits(ctx, mergeBase, "origin/"+defaultBranch)
-		if err != nil || len(newOnMainCommits) == 0 {
-			continue
-		}
-
-		newOnMainCommitsSet := make(map[string]struct{}, len(newOnMainCommits))
-		for _, sha := range newOnMainCommits {
-			newOnMainCommitsSet[sha] = struct{}{}
-		}
-
-		found := false
+		// Heuristic: check if the PR's ancestor contains commits from a merged PR.
 		for i, mergedPR := range mergedPRs {
-			if mergedPR.MergeCommit.Sha == "" {
+			if len(mergedPR.Commits) == 0 {
 				continue
 			}
+			if mergedPR.BaseRefName != node.Value.BaseRefName {
+				continue
+			}
+			ancestorCommit := mergedPR.Commits[0].Oid
 
-			if _, ok := newOnMainCommitsSet[mergedPR.MergeCommit.Sha]; ok {
+			isAncestor, err := git.IsAncestor(ctx, ancestorCommit, prHeadShas[node.Value.HeadRefName])
+			if err == nil && isAncestor {
 				node.OriginalBase = &mergedPRs[i]
-				found = true
 				break
 			}
-		}
-		if found {
-			continue
 		}
 	}
 
@@ -109,13 +90,4 @@ func BuildDependencyTree(ctx context.Context, prs []gitobj.PullRequest, mergedPR
 type RebaseInfo struct {
 	PR   gitobj.PullRequest
 	Onto string
-}
-
-func (ri *RebaseInfo) String() string {
-	return fmt.Sprintf("%s %s (%s ← %s)",
-		ri.PR.PRNumberString(),
-		ri.PR.Title,
-		color.Cyan(ri.PR.BaseRefName),
-		color.Blue(ri.PR.HeadRefName),
-	)
 }

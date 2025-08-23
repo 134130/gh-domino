@@ -31,13 +31,61 @@
   stdout: 2191b14b575cf033131618e9931b9be178ca3def
 - command: "git merge-base origin/main origin/stack-2"
   stdout: 32ce833b78a6bc6979e1d88a82dfa680a92ecbdb
+- command: "git merge-base origin/main origin/stack-1"
+  stdout: 32ce833b78a6bc6979e1d88a82dfa680a92ecbdb
 - command: "git log --pretty=%H 32ce833b78a6bc6979e1d88a82dfa680a92ecbdb..origin/main"
   stdout: ba652e2d8ed795f4a1a4c1e0937f77ac7309b54e
 - command: "git rev-parse origin/main"
   stdout: ba652e2d8ed795f4a1a4c1e0937f77ac7309b54e
+- command: "git merge-base origin/main 87f9c09143a4937e4510d276fa649d07cd64bfe3"
+  stdout: d44b1e7ee3170cac0b89aea3e26c15b593bf1da8
 - command: "git merge-base --is-ancestor ba652e2d8ed795f4a1a4c1e0937f77ac7309b54e 87f9c09143a4937e4510d276fa649d07cd64bfe3"
   exitCode: 1
-- command: "gh pr list --author @me --json number,title,url,author,state,isDraft,mergeCommit,baseRefName,headRefName,headRepository"
+- command: "git merge-base --is-ancestor e512602c242d5ff81742f2083778c7b6c2067dcc 87f9c09143a4937e4510d276fa649d07cd64bfe3"
+  exitCode: 1
+- command: "git merge-base --is-ancestor 11953e9dbecfe6143656b7f7776888b4cf7f9929 87f9c09143a4937e4510d276fa649d07cd64bfe3"
+  exitCode: 1
+- command: "git merge-base --is-ancestor 5675286e9f714e9b7377345ae09f7d0815824a71 87f9c09143a4937e4510d276fa649d07cd64bfe3"
+  exitCode: 1
+- command: "git merge-base --is-ancestor c90c2270541813477997ffeb466612ed1046d60b 87f9c09143a4937e4510d276fa649d07cd64bfe3"
+  exitCode: 1
+- command: "git merge-base --is-ancestor ebfb020c109fc788ce8aa2d376e32495a7bbfa33 87f9c09143a4937e4510d276fa649d07cd64bfe3"
+  exitCode: 1
+- command: "git merge-base --is-ancestor 99b0fba9ac1294ccc4e31bba483d0c6ce2675792 87f9c09143a4937e4510d276fa649d07cd64bfe3"
+  exitCode: 1
+- command: "git merge-base --is-ancestor 4ee463ca727ed1fa075781cdd478bafe8c3e9a7d 87f9c09143a4937e4510d276fa649d07cd64bfe3"
+  exitCode: 1
+- command: "git merge-base --is-ancestor f9d7b529d0c1fe96e8b3d4aaf00756c30b803765 87f9c09143a4937e4510d276fa649d07cd64bfe3"
+  exitCode: 1
+- command: "git merge-base --is-ancestor 1d8bbe7d197e9d25e9df361fd2a3ecca3cb64c82 87f9c09143a4937e4510d276fa649d07cd64bfe3"
+  exitCode: 1
+- command: "git merge-base --is-ancestor 652471d49bca016e099f396e04ff028bd27c3ae5 87f9c09143a4937e4510d276fa649d07cd64bfe3"
+  exitCode: 1
+- command: "git merge-base --is-ancestor b79cd611f4ebb30b80df6077b225c240e70fd02f 87f9c09143a4937e4510d276fa649d07cd64bfe3"
+  exitCode: 1
+- command: "git merge-base --is-ancestor 39e71c8334a74423690aaa8a442896f350fd1f27 87f9c09143a4937e4510d276fa649d07cd64bfe3"
+  exitCode: 1
+- command: "git merge-base --is-ancestor fef7d5c1796f432cd536db9ad5541dbd7350874c 87f9c09143a4937e4510d276fa649d07cd64bfe3"
+  exitCode: 1
+- command: "git merge-base --is-ancestor 8f1c94f2a1503e2bddd006d16b54c58f4c522c10 87f9c09143a4937e4510d276fa649d07cd64bfe3"
+  exitCode: 1
+- command: "git merge-base --is-ancestor 1829aa37dade185d5191b83b6094b0355d3c413f 87f9c09143a4937e4510d276fa649d07cd64bfe3"
+  exitCode: 1
+- command: "git merge-base --is-ancestor 3e362d0ee180026b39865bed442073e339023c1b 87f9c09143a4937e4510d276fa649d07cd64bfe3"
+  exitCode: 1
+- command: "git merge-base --is-ancestor 909d871a7213af3fde9dc48c0103fa23d08b2de5 87f9c09143a4937e4510d276fa649d07cd64bfe3"
+  exitCode: 1
+- command: "git merge-base --is-ancestor 3712ac1ebd5ca3640ca15831f56ec869199d1901 87f9c09143a4937e4510d276fa649d07cd64bfe3"
+  exitCode: 1
+- command: "git merge-base --is-ancestor 1c839bda8fed2971a63f712c98dc5a533369bcc9 87f9c09143a4937e4510d276fa649d07cd64bfe3"
+  exitCode: 1
+- command: "git merge-base --is-ancestor 0b4e4786fd1f6fb13c74e64114943e5c15be464c 87f9c09143a4937e4510d276fa649d07cd64bfe3"
+  exitCode: 1
+- command: "git merge-base --is-ancestor db53915c0166833196c311581ea3820f6379f4b1 87f9c09143a4937e4510d276fa649d07cd64bfe3"
+  exitCode: 1
+- command: "git merge-base --is-ancestor d44b1e7ee3170cac0b89aea3e26c15b593bf1da8 87f9c09143a4937e4510d276fa649d07cd64bfe3"
+  exitCode: 0
+- command: "gh pr list --author @me --json number,title,url,author,state,isDraft,mergeCommit,baseRefName,headRefName,headRepository,commits"
   stdout: |
     [
       {
