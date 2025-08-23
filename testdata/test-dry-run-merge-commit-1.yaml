@@ -20,10 +20,14 @@
         main    tracked
 - command: "git merge-base origin/main origin/stack-2"
   stdout: 3712ac1ebd5ca3640ca15831f56ec869199d1901
+- command: "git merge-base origin/main origin/stack-2"
+  stdout: 3712ac1ebd5ca3640ca15831f56ec869199d1901
 - command: "git log --pretty=%H 3712ac1ebd5ca3640ca15831f56ec869199d1901..origin/main"
   stdout: e64e1946eb777d8ec1973d8a896426bd3d6e722b
 - command: "git rev-parse origin/stack-1"
   stdout: 3712ac1ebd5ca3640ca15831f56ec869199d1901
+- command: "git rev-parse origin/stack-2"
+  stdout: 6e2949f9436c51b49708e21171884662454312fd
 - command: "git rev-parse origin/stack-2"
   stdout: 6e2949f9436c51b49708e21171884662454312fd
 - command: "git rev-parse origin/stack-3"

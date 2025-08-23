@@ -178,3 +178,57 @@ Dry run mode enabled. The following PRs would be rebased:
 		})
 	}
 }
+
+func TestAuto(t *testing.T) {
+	testcases := []struct {
+		name     string
+		expected string
+	}{{
+		name: "test-auto-merge-commit-1",
+		expected: `✔ Fetching pull requests...
+Pull Requests
+└─  #91 bar (stack-1 ← stack-2) [was on #90]
+    └─  #92 baz (stack-2 ← stack-3)
+
+✔ Rebasing #91 bar (stack-1 ← stack-2) onto main...
+✔ Pushing #91...
+✔ Updating base branch of #91 to main...
+✔ Rebasing #92 baz (stack-2 ← stack-3) onto stack-2...
+✔ Pushing #92...
+`,
+	}, {
+		name: "test-auto-merge-commit-2",
+		expected: `✔ Fetching pull requests...
+Pull Requests
+└─  #94 bar (stack-1 ← stack-2) [was on #93]
+    └─  #95 baz (stack-2 ← stack-3)
+
+✔ Rebasing #94 bar (stack-1 ← stack-2) onto main...
+✔ Pushing #94...
+✔ Updating base branch of #94 to main...
+✔ Rebasing #95 baz (stack-2 ← stack-3) onto stack-2...
+✔ Pushing #95...
+`,
+	}}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(tt *testing.T) {
+			cr, err := NewYAMLRunner(tt.Context(), fmt.Sprintf("testdata/%s.yaml", tc.name))
+			if err != nil {
+				tt.Fatalf("failed to create YAML runner: %v", err)
+			}
+			git.CommandRunner = cr
+
+			out := &strings.Builder{}
+			if err := domino.Run(tt.Context(), domino.Config{
+				Auto:   ptr(true),
+				DryRun: ptr(false),
+				Writer: out,
+			}); err != nil {
+				tt.Fatalf("Integration test failed: %v", err)
+			}
+
+			assert.Equal(tt, tc.expected, out.String())
+		})
+	}
+}

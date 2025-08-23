@@ -27,6 +27,8 @@
   exitCode: 128
 - command: "git rev-parse origin/stack-2"
   stdout: 87f9c09143a4937e4510d276fa649d07cd64bfe3
+- command: "git rev-parse origin/stack-2"
+  stdout: 87f9c09143a4937e4510d276fa649d07cd64bfe3
 - command: "git rev-parse origin/stack-3"
   stdout: 2191b14b575cf033131618e9931b9be178ca3def
 - command: "git merge-base origin/main origin/stack-2"

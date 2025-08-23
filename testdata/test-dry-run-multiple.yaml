@@ -26,10 +26,16 @@
   stdout: cf44d9b88cfe354ef90acbb3e21a02c088e4836e
 - command: "git rev-parse origin/stack-1"
   stdout: 266f1e61ff263b9e12c6ac9c4f5fae51178fb71a
+- command: "git rev-parse origin/stack-1"
+  stdout: 266f1e61ff263b9e12c6ac9c4f5fae51178fb71a
+- command: "git rev-parse origin/stack-2"
+  stdout: 06a6ed843667d23e0b26f237ec8d9268e458b7d6
 - command: "git rev-parse origin/stack-2"
   stdout: 06a6ed843667d23e0b26f237ec8d9268e458b7d6
 - command: "git rev-parse origin/stack-3"
   stdout: 9de3f9e6d8e094de97a1b96e9b4a7776e5d865fe
+- command: "git rev-parse origin/feature-b"
+  stdout: 438fabe2e30514f860d4139dff462f24f3ef7586
 - command: "git rev-parse origin/feature-b"
   stdout: 438fabe2e30514f860d4139dff462f24f3ef7586
 - command: "git rev-parse origin/feature-c"

@@ -20,6 +20,8 @@
   stdout: 1c839bda8fed2971a63f712c98dc5a533369bcc9
 - command: "git rev-parse origin/stack-2"
   stdout: 940ffc5d82c4d20a0671eae67d2676b00282a700
+- command: "git rev-parse origin/stack-2"
+  stdout: 940ffc5d82c4d20a0671eae67d2676b00282a700
 - command: "git rev-parse origin/stack-3"
   stdout: 48433ad7957e5721552d70b84c456387449ae57b
 - command: "git merge-base --is-ancestor 1c839bda8fed2971a63f712c98dc5a533369bcc9 940ffc5d82c4d20a0671eae67d2676b00282a700"

@@ -26,6 +26,7 @@ type YAMLCommand struct {
 
 type YAMLRunner struct {
 	Commands []YAMLCommand
+	used     map[int]struct{}
 }
 
 func (r *YAMLRunner) Run(ctx context.Context, cmd string, args []string, mods ...git.CommandModifier) error {
@@ -35,11 +36,15 @@ func (r *YAMLRunner) Run(ctx context.Context, cmd string, args []string, mods ..
 	}
 
 	var found *YAMLCommand
-	for _, c := range r.Commands {
+	for i, c := range r.Commands {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		if _, ok := r.used[i]; ok {
+			continue
+		}
 		if c.Command == fmt.Sprintf("%s %s", cmd, strings.Join(args, " ")) {
+			r.used[i] = struct{}{}
 			found = &c
 			break
 		}
@@ -93,6 +98,7 @@ func NewYAMLRunner(ctx context.Context, filename string) (*YAMLRunner, error) {
 
 	return &YAMLRunner{
 		Commands: runners,
+		used:     make(map[int]struct{}),
 	}, nil
 }
 

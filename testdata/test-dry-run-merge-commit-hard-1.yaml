@@ -23,6 +23,8 @@
   stdout: fd5d5345e172463ab8eb6e4f07380eccf02712f6
 - command: "git rev-parse origin/stack-2"
   stdout: 6cc28b05cc14b5dbd796fea69c9fb870a08465d7
+- command: "git rev-parse origin/stack-2"
+  stdout: 6cc28b05cc14b5dbd796fea69c9fb870a08465d7
 - command: "git rev-parse origin/stack-3"
   stdout: dbafc63f0c84ce759b980eaa9df6517830a4ebe1
 - command: "git merge-base origin/main origin/stack-2"
