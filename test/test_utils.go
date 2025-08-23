@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/goccy/go-yaml"
@@ -86,7 +87,11 @@ func (r *YAMLRunner) Run(ctx context.Context, cmd string, args []string, mods ..
 }
 
 func NewYAMLRunner(ctx context.Context, filename string) (*YAMLRunner, error) {
-	file, err := os.Open(fmt.Sprintf("/Users/cooper/development/gh-domino/%s", filename)) // TODO: filename
+	dir, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get working directory: %w", err)
+	}
+	file, err := os.Open(filepath.Join(dir, "../", filename))
 	if err != nil {
 		return nil, fmt.Errorf("failed to open test data file: %w", err)
 	}
