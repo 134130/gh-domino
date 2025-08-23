@@ -122,7 +122,7 @@ func NewLoggingRunner() *LoggingRunner {
 var _ git.Runner = (*LoggingRunner)(nil)
 
 func (r *LoggingRunner) Run(ctx context.Context, cmd string, args []string, mods ...git.CommandModifier) error {
-	f, err := os.OpenFile("test_runner.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile("/Users/cooper/development/gh-domino/test_runner.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		panic(err)
 	}
@@ -153,9 +153,11 @@ func (r *LoggingRunner) Run(ctx context.Context, cmd string, args []string, mods
 		if len(content) == 0 {
 			return
 		}
+		content = strings.TrimSuffix(content, "\n")
 		if strings.ContainsRune(content, '\n') {
 			_, _ = fmt.Fprintf(f, "  %s: |\n", label)
-			_, _ = fmt.Fprintf(f, style.Render(content))
+			_, _ = fmt.Fprint(f, style.Render(content))
+			_, _ = fmt.Fprint(f, "\n")
 		} else {
 			_, _ = fmt.Fprintf(f, "  %s: %s\n", label, strings.TrimSpace(content))
 		}
