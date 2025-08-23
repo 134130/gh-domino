@@ -2,6 +2,7 @@ package stackedpr
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/134130/gh-domino/git"
 	"github.com/134130/gh-domino/gitobj"
@@ -13,7 +14,7 @@ type Node struct {
 	OriginalBase *gitobj.PullRequest
 }
 
-func BuildDependencyTree(ctx context.Context, prs []gitobj.PullRequest, mergedPRs []gitobj.PullRequest, defaultBranch string, prHeadShas map[string]string) ([]*Node, error) {
+func BuildDependencyTree(ctx context.Context, prs []gitobj.PullRequest, mergedPRs []gitobj.PullRequest, prHeadShas map[string]string) ([]*Node, error) {
 	prMap := make(map[string]*Node)                           // HeadRefName -> Node
 	isChild := make(map[string]bool)                          // HeadRefName -> isChild
 	mergedPRsByHeadRef := make(map[string]gitobj.PullRequest) // HeadRefName -> Merged PR
@@ -59,6 +60,11 @@ func BuildDependencyTree(ctx context.Context, prs []gitobj.PullRequest, mergedPR
 		if mergedPR, ok := mergedPRsByHeadRef[node.Value.BaseRefName]; ok {
 			node.OriginalBase = &mergedPR
 			continue
+		}
+
+		defaultBranch, err := git.GetDefaultBranch(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("could not get default branch: %w", err)
 		}
 
 		if node.Value.BaseRefName != defaultBranch {

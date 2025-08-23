@@ -17,131 +17,144 @@ func TestIntegration(t *testing.T) {
 		expected string
 	}{{
 		name: "test-merge-commit-1",
-		expected: `✔ Fetching pull requests... done
+		expected: `✔ Fetching pull requests...
 Pull Requests
 └─  #56 bar (stack-1 ← stack-2) [was on #55]
     └─  #57 baz (stack-2 ← stack-3)
+
 Dry run mode enabled. The following PRs would be rebased:
   #56 bar (stack-1 ← stack-2) (update base branch to main)
   #57 baz (stack-2 ← stack-3)
 `,
 	}, {
 		name: "test-merge-commit-2",
-		expected: `✔ Fetching pull requests... done
+		expected: `✔ Fetching pull requests...
 Pull Requests
 └─  #56 bar (stack-1 ← stack-2) [was on #55]
     └─  #57 baz (stack-2 ← stack-3)
+
 Dry run mode enabled. The following PRs would be rebased:
   #56 bar (stack-1 ← stack-2) (update base branch to main)
   #57 baz (stack-2 ← stack-3)
 `,
 	}, {
 		name: "test-merge-commit-hard-1",
-		expected: `✔ Fetching pull requests... done
+		expected: `✔ Fetching pull requests...
 Pull Requests
 └─  #62 bar (stack-1 ← stack-2) [was on #61]
     └─  #63 baz (stack-2 ← stack-3)
+
 Dry run mode enabled. The following PRs would be rebased:
   #62 bar (stack-1 ← stack-2) (update base branch to main)
   #63 baz (stack-2 ← stack-3)
 `}, {
 		name: "test-merge-commit-hard-2",
-		expected: `✔ Fetching pull requests... done
+		expected: `✔ Fetching pull requests...
 Pull Requests
 └─  #73 bar (stack-1 ← stack-2) [was on #72]
     └─  #74 baz (stack-2 ← stack-3)
+
 Dry run mode enabled. The following PRs would be rebased:
   #73 bar (stack-1 ← stack-2) (update base branch to main)
   #74 baz (stack-2 ← stack-3)
 `,
 	}, {
 		name: "test-multiple",
-		expected: `✔ Fetching pull requests... done
+		expected: `✔ Fetching pull requests...
 Pull Requests
 ├─  #78 foo (main ← stack-1)
 │   └─  #79 bar (stack-1 ← stack-2)
 │       └─  #80 baz (stack-2 ← stack-3)
 └─  #82 bbb (feature-a ← feature-b) [was on #81]
     └─  #83 ccc (feature-b ← feature-c)
+
 Dry run mode enabled. The following PRs would be rebased:
   #82 bbb (feature-a ← feature-b) (update base branch to main)
   #83 ccc (feature-b ← feature-c)
 `,
 	}, {
 		name: "test-rebase-1",
-		expected: `✔ Fetching pull requests... done
+		expected: `✔ Fetching pull requests...
 Pull Requests
 └─  #59 bar (stack-1 ← stack-2) [was on #58]
     └─  #60 baz (stack-2 ← stack-3)
+
 Dry run mode enabled. The following PRs would be rebased:
   #59 bar (stack-1 ← stack-2) (update base branch to main)
   #60 baz (stack-2 ← stack-3)
 `,
 	}, {
 		name: "test-rebase-hard-1",
-		expected: `✔ Fetching pull requests... done
+		expected: `✔ Fetching pull requests...
 Pull Requests
 └─  #65 bar (stack-1 ← stack-2) [was on #64]
     └─  #66 baz (stack-2 ← stack-3)
+
 Dry run mode enabled. The following PRs would be rebased:
   #65 bar (stack-1 ← stack-2) (update base branch to main)
   #66 baz (stack-2 ← stack-3)
 `}, {
 		name: "test-rebase-hard-2",
-		expected: `✔ Fetching pull requests... done
+		expected: `✔ Fetching pull requests...
 Pull Requests
 └─  #76 bar (stack-1 ← stack-2) [was on #75]
     └─  #77 baz (stack-2 ← stack-3)
+
 Dry run mode enabled. The following PRs would be rebased:
   #76 bar (stack-1 ← stack-2) (update base branch to main)
   #77 baz (stack-2 ← stack-3)
 `,
 	}, {
 		name: "test-squash-1",
-		expected: `✔ Fetching pull requests... done
+		expected: `✔ Fetching pull requests...
 Pull Requests
 └─  #51 foo (main ← stack-1)
     └─  #52 bar (stack-1 ← stack-2)
         └─  #53 baz (stack-2 ← stack-3)
+
 Dry run mode enabled. The following PRs would be rebased:
-No broken PRs found.
+✔ No broken PRs found.
 `,
 	}, {
 		name: "test-squash-2",
-		expected: `✔ Fetching pull requests... done
+		expected: `✔ Fetching pull requests...
 Pull Requests
 └─  #52 bar (stack-1 ← stack-2) [was on #51]
     └─  #53 baz (stack-2 ← stack-3)
+
 Dry run mode enabled. The following PRs would be rebased:
   #52 bar (stack-1 ← stack-2) (update base branch to main)
   #53 baz (stack-2 ← stack-3)
 `,
 	}, {
 		name: "test-squash-3",
-		expected: `✔ Fetching pull requests... done
+		expected: `✔ Fetching pull requests...
 Pull Requests
 └─  #52 bar (main ← stack-2) [was on #51]
     └─  #53 baz (stack-2 ← stack-3)
+
 Dry run mode enabled. The following PRs would be rebased:
   #52 bar (main ← stack-2)
   #53 baz (stack-2 ← stack-3)
 `,
 	}, {
 		name: "test-squash-hard-1",
-		expected: `✔ Fetching pull requests... done
+		expected: `✔ Fetching pull requests...
 Pull Requests
 └─  #68 bar (stack-1 ← stack-2) [was on #67]
     └─  #69 baz (stack-2 ← stack-3)
+
 Dry run mode enabled. The following PRs would be rebased:
   #68 bar (stack-1 ← stack-2) (update base branch to main)
   #69 baz (stack-2 ← stack-3)
 `,
 	}, {
 		name: "test-squash-hard-2",
-		expected: `✔ Fetching pull requests... done
+		expected: `✔ Fetching pull requests...
 Pull Requests
 └─  #68 bar (main ← stack-2) [was on #67]
     └─  #69 baz (stack-2 ← stack-3)
+
 Dry run mode enabled. The following PRs would be rebased:
   #68 bar (main ← stack-2)
   #69 baz (stack-2 ← stack-3)

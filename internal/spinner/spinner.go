@@ -18,6 +18,14 @@ func New(msg string, writer io.Writer) *Spinner {
 	}
 }
 
+func (s *Spinner) Run(fn func() error) error {
+	s.Start()
+	defer s.Stop()
+	err := fn()
+	s.Stop()
+	return err
+}
+
 func (s *Spinner) Start() {
 	s.sp.Start()
 }

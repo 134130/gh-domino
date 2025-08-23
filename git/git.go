@@ -37,7 +37,13 @@ func ListPullRequests(ctx context.Context) ([]gitobj.PullRequest, error) {
 	return prs, nil
 }
 
+var defaultBranchCache string
+
 func GetDefaultBranch(ctx context.Context) (string, error) {
+	if defaultBranchCache != "" {
+		return defaultBranchCache, nil
+	}
+
 	stdout := &bytes.Buffer{}
 	args := []string{"remote", "show", "origin"}
 	if err := NewCommand("git", args...).Run(ctx, WithStdout(stdout)); err != nil {
@@ -48,7 +54,8 @@ func GetDefaultBranch(ctx context.Context) (string, error) {
 		if strings.Contains(line, "HEAD branch") {
 			parts := strings.Split(line, ":")
 			if len(parts) > 1 {
-				return strings.TrimSpace(parts[1]), nil
+				defaultBranchCache = strings.TrimSpace(parts[1])
+				return defaultBranchCache, nil
 			}
 		}
 	}
@@ -135,7 +142,7 @@ func GetMergeBase(ctx context.Context, branch1, branch2 string) (string, error) 
 }
 
 func UpdateBaseBranch(ctx context.Context, prNumber int, newBase string) error {
-	args := []string{"pr", "edit", fmt.Sprintf("%d", prNumber), "--base", newBase}
+	args := []string{"pr", "edit", fmt.Sprint(prNumber), "--base", newBase}
 	return NewCommand("gh", args...).Run(ctx)
 }
 
