@@ -2,6 +2,7 @@ package domino
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 
@@ -18,6 +19,10 @@ var stderr = func(msg string, args ...interface{}) {}
 
 func success(msg string) {
 	stderr("%s %s\n", color.Green("✔"), msg)
+}
+
+func failure(msg string) {
+	stderr("%s %s\n", color.Red("✘"), msg)
 }
 
 func Run(ctx context.Context, cfg Config) error {
@@ -106,7 +111,7 @@ func Run(ctx context.Context, cfg Config) error {
 			}
 			brokenPR := stackedpr.RebaseInfo{PR: pr, Onto: onto}
 			if err := handleBrokenPR(ctx, brokenPR, cfg, prHeadShas); err != nil {
-				stderr("\n%s Failed to handle broken PR %s: %v\n", color.Red("✖"), brokenPR.PR.PRNumberString(), err)
+				failure(fmt.Sprintf("Failed to handle broken PR %s: %v\n", brokenPR.PR.PRNumberString(), err))
 				os.Exit(1)
 			}
 		}
@@ -225,7 +230,13 @@ func handleBrokenPR(
 	if err := spinner.New(msg, cfg.Writer).Run(func() error {
 		return git.Rebase(ctx, fmt.Sprintf("origin/%s", brokenPR.Onto), brokenPR.PR.HeadRefName)
 	}); err != nil {
-		return fmt.Errorf("failed to rebase %s onto %s: %v", brokenPR.PR.String(), brokenPR.Onto, err)
+		if errors.Is(err, git.ErrRebaseConflict) {
+			// Attempt to abort the rebase if there was a conflict.
+			if err := git.AbortRebase(ctx); err != nil {
+				return fmt.Errorf("rebase conflict occurred and failed to abort rebase: %v", err)
+			}
+		}
+		return fmt.Errorf("failed to rebase %s onto %s: %v", brokenPR.PR.HeadRefName, brokenPR.Onto, err)
 	}
 	success(msg)
 

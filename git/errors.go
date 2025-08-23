@@ -4,6 +4,8 @@ import (
 	"fmt"
 )
 
+var ErrRebaseConflict = fmt.Errorf("rebase conflict")
+
 type NotInstalledError struct {
 	message string
 	err     error
