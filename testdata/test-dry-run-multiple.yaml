@@ -100,6 +100,8 @@
   exitCode: 1
 - command: "git merge-base --is-ancestor 11953e9dbecfe6143656b7f7776888b4cf7f9929 266f1e61ff263b9e12c6ac9c4f5fae51178fb71a"
   exitCode: 1
+- command: "git merge-base --is-ancestor c81e3fa41f4f7d8003c04426a256f00300ed053f cf44d9b88cfe354ef90acbb3e21a02c088e4836e"
+  exitCode: 1
 - command: "git merge-base origin/stack-1 06a6ed843667d23e0b26f237ec8d9268e458b7d6"
   stdout: 266f1e61ff263b9e12c6ac9c4f5fae51178fb71a
 - command: "git merge-base origin/stack-2 9de3f9e6d8e094de97a1b96e9b4a7776e5d865fe"

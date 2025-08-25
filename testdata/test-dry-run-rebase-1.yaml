@@ -26,6 +26,8 @@
   stdout: 48433ad7957e5721552d70b84c456387449ae57b
 - command: "git merge-base --is-ancestor 1c839bda8fed2971a63f712c98dc5a533369bcc9 940ffc5d82c4d20a0671eae67d2676b00282a700"
   exitCode: 0
+- command: "git merge-base --is-ancestor 1c839bda8fed2971a63f712c98dc5a533369bcc9 975cf214ff0c954b0c2ed46a0da927f1e8c0b2d2"
+  exitCode: 1
 - command: "git merge-base origin/stack-2 48433ad7957e5721552d70b84c456387449ae57b"
   stdout: 940ffc5d82c4d20a0671eae67d2676b00282a700
 - command: "gh pr list --author @me --json number,title,url,author,state,isDraft,mergeCommit,baseRefName,headRefName,headRepository,commits"

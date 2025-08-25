@@ -80,10 +80,17 @@ func GetBranchCommits(ctx context.Context, base, head string) ([]string, error) 
 	return commits, nil
 }
 
-func Rebase(ctx context.Context, onto, branch string) error {
+func Rebase(ctx context.Context, newBase, upstream, branch string) error {
 	var gitErr *GitError
 
-	if err := NewCommand("git", "rebase", onto, branch).Run(ctx); err != nil && errors.As(err, &gitErr) {
+	args := []string{"rebase"}
+	if upstream != "" {
+		args = append(args, "--onto", newBase, upstream, branch)
+	} else {
+		args = append(args, newBase, branch)
+	}
+
+	if err := NewCommand("git", args...).Run(ctx); err != nil && errors.As(err, &gitErr) {
 		if gitErr.ExitCode == 1 {
 			return ErrRebaseConflict
 		}
