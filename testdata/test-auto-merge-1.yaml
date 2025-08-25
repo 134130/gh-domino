@@ -2,6 +2,14 @@
 # Default case
 # - The PR (stack-1) is squashed and merged into main.
 #
+# * 79876cc - (main) Merge pull request #90 from 134130/stack-1
+# | * 38afa1f - (stack-3) baz - PR #92 [OPEN]
+# | * d7ac480 - (stack-2) bar - PR #91 [OPEN]
+# | * 33811af - (stack-1) foo - PR #90 [MERGED]
+# |/
+# * c0d09a7 - Merge pull request #87 from 134130/feature-a
+# * ca602ba - init
+#
 - command: "git fetch origin"
   stdout:
 - command: "git remote show origin"
@@ -49,6 +57,10 @@
      + 38afa1f...dd03563 stack-3 -> stack-3 (forced update)
 - command: git rev-parse origin/stack-3
   stdout: dd035635c9183f51f23588218a2f9167fad51401
+- command: "git merge-base --is-ancestor 33811affe8e2b92f0e61589b832a675a599c04f2 79876cc6587421cf4bd2be252e31ce33311c8f1c"
+  exitCode: 1
+- command: "git rebase --onto origin/main 33811affe8e2b92f0e61589b832a675a599c04f2 stack-2"
+  exitCode: 0
 - command: "gh pr list --author @me --json number,title,url,author,state,isDraft,mergeCommit,baseRefName,headRefName,headRepository,commits"
   stdout: |
     [

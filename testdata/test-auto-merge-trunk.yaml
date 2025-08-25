@@ -36,6 +36,10 @@
   stdout: 10ba6da3091041dd120bde6ea9cc21c65bada807
 - command: git merge-base origin/feature/trunk-b c152f90d1bcb5b906d6e89871f65f288d6322f55
   stdout: b349e758c33065539c350d2e07944f388d480b2f
+- command: git merge-base --is-ancestor a98359aed8488f53ea2a4d1beab56a42f6dcb9f9 e68e1fa458b97e19c04eaf5cb32d507df0f37414
+  exitCode: 1
+- command: git rebase --onto origin/trunk a98359aed8488f53ea2a4d1beab56a42f6dcb9f9 feature/trunk-b
+  exitCode: 0
 - command: git rebase origin/feature/trunk-b feature/trunk-c
   stderr: |
     warning: skipped previously applied commit a98359a

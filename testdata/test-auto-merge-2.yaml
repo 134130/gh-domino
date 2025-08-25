@@ -4,6 +4,14 @@
 # - The child PR (stack-2) is rebased onto main and force-pushed.
 # - But the grandchild PR (stack-3) is not rebased yet.
 #
+# * 72e1b20 - (stack-2) bar - PR #94 [OPEN]
+# * 59d6375 - (main) Merge pull request #93 from 134130/stack-1
+# | * 250e9d4 - (stack-3) baz - PR #95 [OPEN]
+# | * 321fe59 - bar
+# | * 99b6ec8 - foo - PR #93 [MERGED]
+# |/
+# * c0d09a7 - Merge pull request #87 from 134130/feature-a
+# * ca602ba - init
 - command: "git fetch origin"
   stdout:
 - command: "git remote show origin"
@@ -53,6 +61,10 @@
      + 250e9d4...2a463d3 stack-3 -> stack-3 (forced update)
 - command: git rev-parse origin/stack-3
   stdout: 2a463d34fa4dce79f8b9aaf4c2986ab5d7f5bdf2
+- command: "git merge-base --is-ancestor 99b6ec8d347f9f1abcfc2daaff833e3619285b87 59d637513481e11b727868d93e9b449d6365660b"
+  exitCode: 1
+- command: "git rebase --onto origin/main 99b6ec8d347f9f1abcfc2daaff833e3619285b87 stack-2"
+  exitCode: 0 # TODO: Check is this logic correct?
 - command: "gh pr list --author @me --json number,title,url,author,state,isDraft,mergeCommit,baseRefName,headRefName,headRepository,commits"
   stdout: |
     [{"author":{"id":"MDQ6VXNlcjUwNDg3NDY3","is_bot":false,"login":"134130","name":"JiHwan Oh"},"baseRefName":"stack-2","commits":[{"authoredDate":"2025-08-23T08:48:55Z","authors":[{"email":"sapindus.hwan@gmail.com","id":"MDQ6VXNlcjUwNDg3NDY3","login":"134130","name":"JiHwan Oh"}],"committedDate":"2025-08-23T08:48:55Z","messageBody":"","messageHeadline":"baz","oid":"250e9d4a09fb16db50957548942887ef10e855e2"}],"headRefName":"stack-3","headRepository":{"id":"R_kgDOPg9I-g","name":"test-domino"},"isDraft":false,"mergeCommit":null,"number":95,"state":"OPEN","title":"baz","url":"https://github.com/134130/test-domino/pull/95"},{"author":{"id":"MDQ6VXNlcjUwNDg3NDY3","is_bot":false,"login":"134130","name":"JiHwan Oh"},"baseRefName":"stack-1","commits":[{"authoredDate":"2025-08-23T08:48:50Z","authors":[{"email":"sapindus.hwan@gmail.com","id":"MDQ6VXNlcjUwNDg3NDY3","login":"134130","name":"JiHwan Oh"}],"committedDate":"2025-08-23T08:48:50Z","messageBody":"","messageHeadline":"bar","oid":"321fe5965d81fab02f211ce2607ffadce4455621"}],"headRefName":"stack-2","headRepository":{"id":"R_kgDOPg9I-g","name":"test-domino"},"isDraft":false,"mergeCommit":null,"number":94,"state":"OPEN","title":"bar","url":"https://github.com/134130/test-domino/pull/94"}]

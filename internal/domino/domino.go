@@ -88,7 +88,16 @@ func Run(ctx context.Context, cfg Config) error {
 
 	totalProcessed := 0
 	for _, root := range roots {
-		totalProcessed += processDependencyTree(ctx, root, prMap, mergedPRsByHeadRef, prHeadShas, cfg, mergedPRs, processedPRs)
+		processed, err := processDependencyTree(ctx, root, prMap, mergedPRsByHeadRef, prHeadShas, cfg, mergedPRs, processedPRs)
+		if err != nil {
+			if errors.Is(err, git.ErrRebaseConflict) {
+				// TODO: Handle rebase conflict error message gracefully
+			} else {
+				failure(err.Error())
+			}
+			return nil
+		}
+		totalProcessed += processed
 	}
 
 	if totalProcessed == 0 {
@@ -108,15 +117,15 @@ func processDependencyTree(
 	cfg Config,
 	mergedPRs []gitobj.PullRequest,
 	processedPRs map[int]bool,
-) int {
+) (int, error) {
 	if node == nil {
-		return 0
+		return 0, nil
 	}
 	pr := node.Value
 
 	// Skip already processed PRs
 	if processedPRs[pr.Number] {
-		return 0
+		return 0, nil
 	}
 	processedPRs[pr.Number] = true
 
@@ -132,16 +141,19 @@ func processDependencyTree(
 		}
 		brokenPR := stackedpr.RebaseInfo{PR: pr, NewBase: newBase, Upstream: upstream}
 		if err := handleBrokenPR(ctx, brokenPR, cfg, prHeadShas); err != nil {
-			failure(fmt.Sprintf("Failed to handle broken PR %s: %v\n", brokenPR.PR.PRNumberString(), err))
-			os.Exit(1)
+			return totalProcessed, fmt.Errorf("failed to handle broken PR %s: %w", brokenPR.PR.PRNumberString(), err)
 		}
 		totalProcessed++
 	}
 
 	for _, child := range node.Children {
-		totalProcessed += processDependencyTree(ctx, child, prMap, mergedPRsByHeadRef, prHeadShas, cfg, mergedPRs, processedPRs)
+		processed, err := processDependencyTree(ctx, child, prMap, mergedPRsByHeadRef, prHeadShas, cfg, mergedPRs, processedPRs)
+		if err != nil {
+			return totalProcessed, err
+		}
+		totalProcessed += processed
 	}
-	return totalProcessed
+	return totalProcessed, nil
 }
 
 // determinePRState checks if a pull request is "broken" and needs to be rebased.

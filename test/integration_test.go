@@ -210,6 +210,20 @@ Pull Requests
 ✔ Pushing #95...
 `,
 	}, {
+		name: "test-auto-merge-conflict",
+		expected: `✔ Fetching pull requests...
+Pull Requests
+├─  #112 bar (main ← stack-2)
+│   └─  #113 baz (stack-2 ← stack-3)
+└─  #115 bbb (feature-a ← feature-b) [was on #114]
+
+✘ Failed to handle broken PR #115:
+✘ Failed to handle broken PR #115: failed to rebase feature-b onto main: rebase conflict
+  - Rebase conflict detected while rebasing feature-b onto main
+  - Please resolve the conflict manually with the following commands:
+      git rebase origin/main feature-b
+`,
+	}, {
 		name: "test-auto-merge-trunk",
 		expected: `✔ Fetching pull requests...
 Pull Requests
@@ -240,6 +254,8 @@ Pull Requests
 			}); err != nil {
 				tt.Fatalf("Integration test failed: %v", err)
 			}
+
+			println(out.String())
 
 			assert.Equal(tt, tc.expected, out.String())
 		})
