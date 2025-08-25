@@ -90,8 +90,12 @@ func Run(ctx context.Context, cfg Config) error {
 	for _, root := range roots {
 		processed, err := processDependencyTree(ctx, root, prMap, mergedPRsByHeadRef, prHeadShas, cfg, mergedPRs, processedPRs)
 		if err != nil {
-			if errors.Is(err, git.ErrRebaseConflict) {
-				// TODO: Handle rebase conflict error message gracefully
+			var errRebaseConflict *ErrRebaseConflict
+			if errors.As(err, &errRebaseConflict) {
+				failure(fmt.Sprintf(`Failed to handle broken PR %s due to rebase conflicts.
+  Please resolve the conflicts manually and re-run the tool if needed.
+  You can use the following command to rebase manually:
+      %s`, errRebaseConflict.BrokenPR.PR.PRNumberString(), errRebaseConflict.Command()))
 			} else {
 				failure(err.Error())
 			}
@@ -141,7 +145,7 @@ func processDependencyTree(
 		}
 		brokenPR := stackedpr.RebaseInfo{PR: pr, NewBase: newBase, Upstream: upstream}
 		if err := handleBrokenPR(ctx, brokenPR, cfg, prHeadShas); err != nil {
-			return totalProcessed, fmt.Errorf("failed to handle broken PR %s: %w", brokenPR.PR.PRNumberString(), err)
+			return totalProcessed, err
 		}
 		totalProcessed++
 	}
@@ -295,6 +299,7 @@ func handleBrokenPR(
 			if err := git.AbortRebase(ctx); err != nil {
 				return fmt.Errorf("rebase conflict occurred and failed to abort rebase: %v", err)
 			}
+			return &ErrRebaseConflict{BrokenPR: brokenPR}
 		}
 		return fmt.Errorf("failed to rebase %s onto %s: %v", brokenPR.PR.HeadRefName, brokenPR.NewBase, err)
 	}

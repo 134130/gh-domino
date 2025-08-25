@@ -217,11 +217,10 @@ Pull Requests
 │   └─  #113 baz (stack-2 ← stack-3)
 └─  #115 bbb (feature-a ← feature-b) [was on #114]
 
-✘ Failed to handle broken PR #115:
-✘ Failed to handle broken PR #115: failed to rebase feature-b onto main: rebase conflict
-  - Rebase conflict detected while rebasing feature-b onto main
-  - Please resolve the conflict manually with the following commands:
-      git rebase origin/main feature-b
+✘ Failed to handle broken PR #115 due to rebase conflicts.
+  Please resolve the conflicts manually and re-run the tool if needed.
+  You can use the following command to rebase manually:
+      git rebase --onto origin/main 2e6584b4cf5357c768400670d1a7ca89b862e0b7 feature-b
 `,
 	}, {
 		name: "test-auto-merge-trunk",
