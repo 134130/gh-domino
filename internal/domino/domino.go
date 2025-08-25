@@ -88,7 +88,20 @@ func Run(ctx context.Context, cfg Config) error {
 
 	totalProcessed := 0
 	for _, root := range roots {
-		totalProcessed += processDependencyTree(ctx, root, prMap, mergedPRsByHeadRef, prHeadShas, cfg, mergedPRs, processedPRs)
+		processed, err := processDependencyTree(ctx, root, prMap, mergedPRsByHeadRef, prHeadShas, cfg, mergedPRs, processedPRs)
+		if err != nil {
+			var errRebaseConflict *ErrRebaseConflict
+			if errors.As(err, &errRebaseConflict) {
+				failure(fmt.Sprintf(`Failed to handle broken PR %s due to rebase conflicts.
+  Please resolve the conflicts manually and re-run the tool if needed.
+  You can use the following command to rebase manually:
+      %s`, errRebaseConflict.BrokenPR.PR.PRNumberString(), errRebaseConflict.Command()))
+			} else {
+				failure(err.Error())
+			}
+			return nil
+		}
+		totalProcessed += processed
 	}
 
 	if totalProcessed == 0 {
@@ -108,40 +121,43 @@ func processDependencyTree(
 	cfg Config,
 	mergedPRs []gitobj.PullRequest,
 	processedPRs map[int]bool,
-) int {
+) (int, error) {
 	if node == nil {
-		return 0
+		return 0, nil
 	}
 	pr := node.Value
 
 	// Skip already processed PRs
 	if processedPRs[pr.Number] {
-		return 0
+		return 0, nil
 	}
 	processedPRs[pr.Number] = true
 
 	totalProcessed := 0
 
-	isBroken, onto, err := determinePRState(ctx, pr, prMap, mergedPRsByHeadRef, prHeadShas, cfg, mergedPRs)
+	isBroken, newBase, upstream, err := determinePRState(ctx, pr, prMap, mergedPRsByHeadRef, prHeadShas, cfg, mergedPRs)
 	if err != nil {
 		stderr("Error determining state for PR %s: %v\n", pr.PRNumberString(), err)
 		// Continue to children even if parent has an error
 	} else if isBroken {
-		if onto == "" {
-			onto = pr.BaseRefName
+		if newBase == "" {
+			newBase = pr.BaseRefName
 		}
-		brokenPR := stackedpr.RebaseInfo{PR: pr, Onto: onto}
+		brokenPR := stackedpr.RebaseInfo{PR: pr, NewBase: newBase, Upstream: upstream}
 		if err := handleBrokenPR(ctx, brokenPR, cfg, prHeadShas); err != nil {
-			failure(fmt.Sprintf("Failed to handle broken PR %s: %v\n", brokenPR.PR.PRNumberString(), err))
-			os.Exit(1)
+			return totalProcessed, err
 		}
 		totalProcessed++
 	}
 
 	for _, child := range node.Children {
-		totalProcessed += processDependencyTree(ctx, child, prMap, mergedPRsByHeadRef, prHeadShas, cfg, mergedPRs, processedPRs)
+		processed, err := processDependencyTree(ctx, child, prMap, mergedPRsByHeadRef, prHeadShas, cfg, mergedPRs, processedPRs)
+		if err != nil {
+			return totalProcessed, err
+		}
+		totalProcessed += processed
 	}
-	return totalProcessed
+	return totalProcessed, nil
 }
 
 // determinePRState checks if a pull request is "broken" and needs to be rebased.
@@ -158,12 +174,23 @@ func determinePRState(
 	prHeadShas map[string]string,
 	cfg Config,
 	mergedPRs []gitobj.PullRequest,
-) (isBroken bool, onto string, err error) {
+) (isBroken bool, newBase string, upstream string, err error) {
 	// --- Check 1: Is the base a merged PR? ---
 	// This applies only to root PRs in a stack.
 	if _, isStackedPR := prMap[pr.BaseRefName]; !isStackedPR {
 		if mergedBasePR, isMerged := mergedPRsByHeadRef[pr.BaseRefName]; isMerged {
-			return true, mergedBasePR.BaseRefName, nil
+			if mergedBasePR.MergeCommit.Sha != "" && len(mergedBasePR.Commits) > 0 {
+				lastCommit := mergedBasePR.Commits[len(mergedBasePR.Commits)-1].Oid
+				isAncestor, err := git.IsAncestor(ctx, lastCommit, mergedBasePR.MergeCommit.Sha)
+				if err != nil {
+					return false, "", "", fmt.Errorf("failed to check ancestry: %v", err)
+				}
+				if !isAncestor {
+					// Squash merge detected
+					return true, mergedBasePR.BaseRefName, lastCommit, nil
+				}
+			}
+			return true, mergedBasePR.BaseRefName, "", nil
 		}
 	}
 
@@ -173,12 +200,12 @@ func determinePRState(
 	if _, ok := prMap[pr.BaseRefName]; ok { // Only check divergence for stacked PRs
 		baseShaOnOrigin, err := git.RevParse(ctx, "origin/"+pr.BaseRefName)
 		if err != nil {
-			return false, "", fmt.Errorf("could not get SHA for base %s: %v", pr.BaseRefName, err)
+			return false, "", "", fmt.Errorf("could not get SHA for base %s: %v", pr.BaseRefName, err)
 		}
 		headSha := prHeadShas[pr.HeadRefName]
 		mergeBase, err := git.GetMergeBase(ctx, "origin/"+pr.BaseRefName, headSha)
 		if err != nil {
-			return false, "", fmt.Errorf("could not get merge base for %s and %s: %v", pr.BaseRefName, pr.HeadRefName, err)
+			return false, "", "", fmt.Errorf("could not get merge base for %s and %s: %v", pr.BaseRefName, pr.HeadRefName, err)
 		}
 		if mergeBase != baseShaOnOrigin {
 			isDiverged = true
@@ -197,33 +224,33 @@ func determinePRState(
 	}
 
 	if isDiverged || isParentRebasedInDryRun {
-		return true, "", nil // 'onto' will be set to pr.BaseRefName by the caller
+		return true, "", "", nil // 'newBase' will be set to pr.BaseRefName by the caller
 	}
 
 	// --- Check 4: Does this root PR contain commits from another merged PR? ---
 	// This handles cases where a PR was based on another branch that got merged while this PR was open.
 	defaultBranch, err := git.GetDefaultBranch(ctx)
 	if err != nil {
-		return false, "", fmt.Errorf("could not get default branch: %v", err)
+		return false, "", "", fmt.Errorf("could not get default branch: %v", err)
 	}
 	if pr.BaseRefName == defaultBranch {
 		headSha := prHeadShas[pr.HeadRefName]
 		mergeBase, err := git.GetMergeBase(ctx, "origin/"+defaultBranch, headSha)
 		if err != nil {
-			return false, "", fmt.Errorf("could not get merge base for %s: %v", pr.HeadRefName, err)
+			return false, "", "", fmt.Errorf("could not get merge base for %s: %v", pr.HeadRefName, err)
 		}
 
 		// Find the PR that introduced the merge base commit.
 		for _, mergedPR := range mergedPRs {
 			for _, commit := range mergedPR.Commits {
 				if mergeBase == commit.Oid {
-					return true, mergedPR.BaseRefName, nil
+					return true, mergedPR.BaseRefName, "", nil
 				}
 			}
 		}
 	}
 
-	return false, "", nil
+	return false, "", "", nil
 }
 
 // handleBrokenPR performs the necessary actions on a broken PR, such as rebasing,
@@ -236,8 +263,8 @@ func handleBrokenPR(
 ) error {
 	if *cfg.DryRun {
 		updateBaseBranchString := ""
-		if brokenPR.PR.BaseRefName != brokenPR.Onto {
-			updateBaseBranchString = fmt.Sprintf(" (update base branch to %s)", color.Cyan(brokenPR.Onto))
+		if brokenPR.PR.BaseRefName != brokenPR.NewBase {
+			updateBaseBranchString = fmt.Sprintf(" (update base branch to %s)", color.Cyan(brokenPR.NewBase))
 		}
 		stderr("  %s%s\n", brokenPR.PR.String(), updateBaseBranchString)
 		prHeadShas[brokenPR.PR.HeadRefName] = "dummy-sha-after-rebase"
@@ -246,8 +273,13 @@ func handleBrokenPR(
 
 	// --- Rebase ---
 	if !*cfg.Auto {
-		stderr("PR %s needs to be rebased onto %s\n", brokenPR.PR.String(), color.Cyan(brokenPR.Onto))
-		cmd := fmt.Sprintf("git rebase %s %s", "origin/"+brokenPR.Onto, brokenPR.PR.HeadRefName)
+		stderr("PR %s needs to be rebased onto %s\n", brokenPR.PR.String(), color.Cyan(brokenPR.NewBase))
+		var cmd string
+		if brokenPR.Upstream != "" {
+			cmd = fmt.Sprintf("git rebase --onto %s %s %s", "origin/"+brokenPR.NewBase, brokenPR.Upstream, brokenPR.PR.HeadRefName)
+		} else {
+			cmd = fmt.Sprintf("git rebase %s %s", "origin/"+brokenPR.NewBase, brokenPR.PR.HeadRefName)
+		}
 		stderr("  Suggested command: %s\n", color.Yellow(cmd))
 		response, err := util.AskForConfirmation("Run this command?")
 		if err != nil {
@@ -258,17 +290,18 @@ func handleBrokenPR(
 		}
 	}
 
-	msg := fmt.Sprintf("Rebasing %s onto %s...", brokenPR.PR.String(), color.Cyan(brokenPR.Onto))
+	msg := fmt.Sprintf("Rebasing %s onto %s...", brokenPR.PR.String(), color.Cyan(brokenPR.NewBase))
 	if err := spinner.New(msg, cfg.Writer).Run(func() error {
-		return git.Rebase(ctx, fmt.Sprintf("origin/%s", brokenPR.Onto), brokenPR.PR.HeadRefName)
+		return git.Rebase(ctx, fmt.Sprintf("origin/%s", brokenPR.NewBase), brokenPR.Upstream, brokenPR.PR.HeadRefName)
 	}); err != nil {
 		if errors.Is(err, git.ErrRebaseConflict) {
 			// Attempt to abort the rebase if there was a conflict.
 			if err := git.AbortRebase(ctx); err != nil {
 				return fmt.Errorf("rebase conflict occurred and failed to abort rebase: %v", err)
 			}
+			return &ErrRebaseConflict{BrokenPR: brokenPR}
 		}
-		return fmt.Errorf("failed to rebase %s onto %s: %v", brokenPR.PR.HeadRefName, brokenPR.Onto, err)
+		return fmt.Errorf("failed to rebase %s onto %s: %v", brokenPR.PR.HeadRefName, brokenPR.NewBase, err)
 	}
 	success(msg)
 
@@ -299,10 +332,10 @@ func handleBrokenPR(
 	prHeadShas[brokenPR.PR.HeadRefName] = newSha
 
 	// --- Update Base Branch ---
-	if brokenPR.PR.BaseRefName != brokenPR.Onto {
+	if brokenPR.PR.BaseRefName != brokenPR.NewBase {
 		if !*cfg.Auto {
-			stderr("Branch %s needs to be updated to base branch %s\n", color.Cyan(brokenPR.PR.HeadRefName), color.Cyan(brokenPR.Onto))
-			cmd := fmt.Sprintf("gh pr edit %s --base %s", brokenPR.PR.PRNumberString(), brokenPR.Onto)
+			stderr("Branch %s needs to be updated to base branch %s\n", color.Cyan(brokenPR.PR.HeadRefName), color.Cyan(brokenPR.NewBase))
+			cmd := fmt.Sprintf("gh pr edit %s --base %s", brokenPR.PR.PRNumberString(), brokenPR.NewBase)
 			stderr("  Suggested command: %s\n", color.Yellow(cmd))
 			response, err := util.AskForConfirmation("Run this command?")
 			if err != nil {
@@ -313,10 +346,10 @@ func handleBrokenPR(
 			}
 		}
 
-		msg = fmt.Sprintf("Updating base branch of %s to %s...", brokenPR.PR.PRNumberString(), color.Cyan(brokenPR.Onto))
+		msg = fmt.Sprintf("Updating base branch of %s to %s...", brokenPR.PR.PRNumberString(), color.Cyan(brokenPR.NewBase))
 
 		if err = spinner.New(msg, cfg.Writer).Run(func() error {
-			return git.UpdateBaseBranch(ctx, brokenPR.PR.Number, brokenPR.Onto)
+			return git.UpdateBaseBranch(ctx, brokenPR.PR.Number, brokenPR.NewBase)
 		}); err != nil {
 			return fmt.Errorf("failed to update base branch for PR %s: %v", brokenPR.PR.PRNumberString(), err)
 		}

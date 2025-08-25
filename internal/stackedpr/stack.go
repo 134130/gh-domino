@@ -94,6 +94,7 @@ func BuildDependencyTree(ctx context.Context, prs []gitobj.PullRequest, mergedPR
 }
 
 type RebaseInfo struct {
-	PR   gitobj.PullRequest
-	Onto string
+	PR       gitobj.PullRequest
+	NewBase  string
+	Upstream string
 }

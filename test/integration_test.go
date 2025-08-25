@@ -210,6 +210,19 @@ Pull Requests
 ✔ Pushing #95...
 `,
 	}, {
+		name: "test-auto-merge-conflict",
+		expected: `✔ Fetching pull requests...
+Pull Requests
+├─  #112 bar (main ← stack-2)
+│   └─  #113 baz (stack-2 ← stack-3)
+└─  #115 bbb (feature-a ← feature-b) [was on #114]
+
+✘ Failed to handle broken PR #115 due to rebase conflicts.
+  Please resolve the conflicts manually and re-run the tool if needed.
+  You can use the following command to rebase manually:
+      git rebase --onto origin/main 2e6584b4cf5357c768400670d1a7ca89b862e0b7 feature-b
+`,
+	}, {
 		name: "test-auto-merge-trunk",
 		expected: `✔ Fetching pull requests...
 Pull Requests

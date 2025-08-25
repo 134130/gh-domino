@@ -38,6 +38,8 @@
   stdout: 6e2949f9436c51b49708e21171884662454312fd
 - command: "git merge-base --is-ancestor 3712ac1ebd5ca3640ca15831f56ec869199d1901 6e2949f9436c51b49708e21171884662454312fd"
   exitCode: 0
+- command: "git merge-base --is-ancestor 3712ac1ebd5ca3640ca15831f56ec869199d1901 e64e1946eb777d8ec1973d8a896426bd3d6e722b"
+  exitCode: 0
 - command: "gh pr list --author @me --json number,title,url,author,state,isDraft,mergeCommit,baseRefName,headRefName,headRepository,commits"
   stdout: |
     [
