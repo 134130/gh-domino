@@ -60,7 +60,7 @@ else
   trap 'rm -rf "$tmpdir"' EXIT
 
   tarball="${tmpdir}/gh-domino.tar.gz"
-  if ! curl -fSL --connect-timeout 5 --max-time 30 -o "$tarball" "$download_url"; then
+  if ! curl -fSL# --connect-timeout 5 --max-time 30 -o "$tarball" "$download_url"; then
     local_build_and_run "Failed to download prebuilt binary"
   fi
 
