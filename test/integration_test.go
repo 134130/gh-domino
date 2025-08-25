@@ -254,8 +254,6 @@ Pull Requests
 				tt.Fatalf("Integration test failed: %v", err)
 			}
 
-			println(out.String())
-
 			assert.Equal(tt, tc.expected, out.String())
 		})
 	}
