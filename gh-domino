@@ -4,55 +4,69 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-PROGRAM_ROOT=$(realpath "$(dirname "${BASH_SOURCE[0]}")")
+SCRIPT_DIR=$(realpath "$(dirname "${BASH_SOURCE[0]}")")
+DIST_DIR="${SCRIPT_DIR}/dist"
 
-if test -f "${PROGRAM_ROOT}/dist/gh-domino"; then
-  exec "${PROGRAM_ROOT}/dist/gh-domino" "$@"
+VERSION=$(git -C "$SCRIPT_DIR" describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+
+PROGRAM_NAME="gh-domino"
+BINARY_NAME="${PROGRAM_NAME}-${VERSION#v}"
+BINARY_PATH="${DIST_DIR}/${BINARY_NAME}"
+
+REPO="134130/gh-domino"
+
+# If the binary already exists, run it directly
+if test -f "$BINARY_PATH"; then
+  exec "$BINARY_PATH" "$@"
   return
 fi
 
 OS=$(uname -s)
 ARCH=$(uname -m)
-
 case "${OS}" in
-  Linux)
-    OS=linux
-    ;;
-  Darwin)
-    OS=darwin
-    ;;
-  *)
-    OS=unknown
-    exit 1
-    ;;
+  Linux)  OS="linux" ;;
+  Darwin) OS="darwin" ;;
+  *)      OS="unknown" ;;
 esac
-
 case "${ARCH}" in
-  x86_64)
-    ARCH=amd64
-    ;;
-  arm64)
-    ARCH=arm64
-    ;;
-  *)
-    ARCH=unknown
-    exit 1
-    ;;
+  x86_64|amd64)  ARCH="amd64" ;;
+  aarch64|arm64) ARCH="arm64" ;;
+  *)             ARCH="unknown" ;;
 esac
 
-mkdir -p "${PROGRAM_ROOT}/dist"
+local_build_and_run() {
+  local reason="$1"
+  echo >&2 "$reason. Building from source..."
 
-if [[ "${OS}" == "unknown" || "${ARCH}" == "unknown" ]]; then
-  # Unsupported OS or Architecture. Run the script with go instead.
   if ! command -v go >/dev/null; then
-    echo "Go not found on the system" >&2
+    echo >&2 "Go not found on the system. Failed to build from source."
     exit 1
   fi
 
-  (cd "${PROGRAM_ROOT}" && go build -o dist/gh-domino ./cmd/gh-domino)
-  exec "${PROGRAM_ROOT}/dist/gh-domino" "$@"
+  BINARY_PATH="${DIST_DIR}/${PROGRAM_NAME}-local-build" # Adjust binary name for local build
+  go build -C "${SCRIPT_DIR}" -o "${BINARY_PATH}" ./cmd/gh-domino
+  exec "$BINARY_PATH" "$@"
+}
+
+# Unsupported os or Architecture. Run the script with go instead.
+if [[ "$OS" == "unknown" || "$ARCH" == "unknown" ]]; then
+  local_build_and_run "Unsupported OS or Architecture: $(uname -m)-$(uname -s)"
 else
-  GH_DOMINO_VERSION="1.0.1"
-  curl -sSL "https://github.com/134130/gh-domino/releases/download/v${GH_DOMINO_VERSION}/gh-domino-${GH_DOMINO_VERSION}-${OS}-${ARCH}.tar.gz" | tar -xz -C "${PROGRAM_ROOT}/dist" gh-domino
-  exec "${PROGRAM_ROOT}/dist/gh-domino" "$@"
+  download_url="https://github.com/${REPO}/releases/download/${VERSION}/${PROGRAM_NAME}-${VERSION#v}-${OS}-${ARCH}.tar.gz"
+
+  echo >&2 "Downloading prebuilt binary from ${download_url}..."
+
+  tmpdir=$(mktemp -d)
+  trap 'rm -rf "$tmpdir"' EXIT
+
+  tarball="${tmpdir}/gh-domino.tar.gz"
+  if ! curl -fSL --connect-timeout 5 --max-time 30 -o "$tarball" "$download_url"; then
+    local_build_and_run "Failed to download prebuilt binary"
+  fi
+
+  tar -zxf "$tarball" -C "$tmpdir" gh-domino
+
+  mkdir -p "$DIST_DIR"
+  install -Dm755 "$tmpdir/gh-domino" "$BINARY_PATH"
+  exec "$BINARY_PATH" "$@"
 fi
