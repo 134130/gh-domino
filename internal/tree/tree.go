@@ -3,8 +3,6 @@ package tree
 import (
 	"fmt"
 	"reflect"
-
-	"github.com/charmbracelet/lipgloss/tree"
 )
 
 type TreeVisitor interface {
@@ -131,97 +129,4 @@ func (v *DefaultTreeVisitor) ShouldSkip(obj interface{}) bool {
 	}
 
 	return false
-}
-
-type TreeBuilder struct {
-	visitor TreeVisitor
-	depth   int
-}
-
-func NewTreeBuilder(visitor TreeVisitor) *TreeBuilder {
-	return &TreeBuilder{
-		visitor: visitor,
-	}
-}
-
-func (tb *TreeBuilder) BuildTree(root interface{}) *tree.Tree {
-	rootTree := tree.Root(tb.visitor.GetDisplayName(root))
-	tb.buildTreeRecursive(rootTree, root, 0)
-	return rootTree
-}
-
-func (tb *TreeBuilder) buildTreeRecursive(parent *tree.Tree, obj interface{}, depth int) {
-	if defaultVisitor, ok := tb.visitor.(*DefaultTreeVisitor); ok {
-		if defaultVisitor.MaxDepth > 0 && depth >= defaultVisitor.MaxDepth {
-			return
-		}
-	}
-
-	children := tb.visitor.GetChildren(obj)
-
-	for _, child := range children {
-		if tb.visitor.ShouldSkip(child) {
-			continue
-		}
-
-		var displayName string
-		var actualValue interface{}
-
-		if childInfo, ok := child.(map[string]interface{}); ok {
-			name := childInfo["name"].(string)
-			value := childInfo["value"]
-
-			valueName := tb.visitor.GetDisplayName(value)
-			displayName = fmt.Sprintf("%s: %s", name, valueName)
-			actualValue = value
-		} else {
-			displayName = tb.visitor.GetDisplayName(child)
-			actualValue = child
-		}
-
-		childTree := tree.New().Root(displayName)
-		parent.Child(childTree)
-
-		tb.buildTreeRecursive(childTree, actualValue, depth+1)
-	}
-}
-
-// 편의 함수들
-
-func RenderTree(root interface{}, options ...TreeOption) string {
-	visitor := &DefaultTreeVisitor{
-		MaxDepth:  10, // 기본 최대 깊이
-		SkipEmpty: false,
-		ShowTypes: false,
-	}
-
-	// 옵션 적용
-	for _, option := range options {
-		option(visitor)
-	}
-
-	builder := NewTreeBuilder(visitor)
-	tree := builder.BuildTree(root)
-
-	return tree.String()
-}
-
-type TreeOption func(*DefaultTreeVisitor)
-
-func WithMaxDepth(depth int) TreeOption {
-	return func(v *DefaultTreeVisitor) {
-		v.MaxDepth = depth
-	}
-}
-
-func WithSkipEmpty(skip bool) TreeOption {
-	return func(v *DefaultTreeVisitor) {
-		v.SkipEmpty = skip
-	}
-}
-
-func WithShowTypes(show bool) TreeOption {
-	return func(v *DefaultTreeVisitor) {
-		v.ShowTypes = show
-	}
 }

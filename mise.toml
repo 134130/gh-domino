@@ -1,5 +1,6 @@
 [tools]
 go = '1.25'
+golangci-lint = "latest"
 goreleaser = "latest"
 
 [tasks.release]
@@ -10,4 +11,21 @@ set -eou pipefail
 export GITHUB_TOKEN=$(gh auth token)
 
 goreleaser
+"""
+
+[tasks.check]
+run = """
+#!/usr/bin/env bash
+set -eou pipefail
+go mod tidy
+golangci-lint run ./...
+go vet ./...
+"""
+
+[tasks.fix]
+run = """
+#!/usr/bin/env bash
+set -eou pipefail
+go mod tidy
+golangci-lint run --fix ./...
 """
