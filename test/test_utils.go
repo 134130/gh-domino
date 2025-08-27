@@ -126,7 +126,7 @@ func (r *LoggingRunner) Run(ctx context.Context, cmd string, args []string, mods
 	if err != nil {
 		panic(err)
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck
 
 	_, _ = fmt.Fprintf(f, "- command: %s %s\n", cmd, strings.Join(args, " "))
 

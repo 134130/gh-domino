@@ -8,8 +8,7 @@ import (
 )
 
 type Spinner struct {
-	sp  *spinner.Spinner
-	msg string
+	sp *spinner.Spinner
 }
 
 func New(msg string, writer io.Writer) *Spinner {
