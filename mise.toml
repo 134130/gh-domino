@@ -19,7 +19,6 @@ run = """
 set -eou pipefail
 go mod tidy
 golangci-lint run ./...
-go vet ./...
 """
 
 [tasks.fix]
