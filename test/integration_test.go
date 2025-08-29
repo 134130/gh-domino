@@ -18,9 +18,10 @@ func TestDryRun(t *testing.T) {
 	}{{
 		name: "test-dry-run-merge-commit-1",
 		expected: `✔ Fetching pull requests...
+
 Pull Requests
-└─  #56 bar (stack-1 ← stack-2) [was on #55]
-    └─  #57 baz (stack-2 ← stack-3)
+└─ #56 bar (stack-1 ← stack-2) [was on #55]
+   └─ #57 baz (stack-2 ← stack-3)
 
 Dry run mode enabled. The following PRs would be rebased:
   #56 bar (stack-1 ← stack-2) (update base branch to main)
@@ -29,9 +30,10 @@ Dry run mode enabled. The following PRs would be rebased:
 	}, {
 		name: "test-dry-run-merge-commit-2",
 		expected: `✔ Fetching pull requests...
+
 Pull Requests
-└─  #56 bar (stack-1 ← stack-2) [was on #55]
-    └─  #57 baz (stack-2 ← stack-3)
+└─ #56 bar (stack-1 ← stack-2) [was on #55]
+   └─ #57 baz (stack-2 ← stack-3)
 
 Dry run mode enabled. The following PRs would be rebased:
   #56 bar (stack-1 ← stack-2) (update base branch to main)
@@ -40,9 +42,10 @@ Dry run mode enabled. The following PRs would be rebased:
 	}, {
 		name: "test-dry-run-merge-commit-hard-1",
 		expected: `✔ Fetching pull requests...
+
 Pull Requests
-└─  #62 bar (stack-1 ← stack-2) [was on #61]
-    └─  #63 baz (stack-2 ← stack-3)
+└─ #62 bar (stack-1 ← stack-2) [was on #61]
+   └─ #63 baz (stack-2 ← stack-3)
 
 Dry run mode enabled. The following PRs would be rebased:
   #62 bar (stack-1 ← stack-2) (update base branch to main)
@@ -50,9 +53,10 @@ Dry run mode enabled. The following PRs would be rebased:
 `}, {
 		name: "test-dry-run-merge-commit-hard-2",
 		expected: `✔ Fetching pull requests...
+
 Pull Requests
-└─  #73 bar (stack-1 ← stack-2) [was on #72]
-    └─  #74 baz (stack-2 ← stack-3)
+└─ #73 bar (stack-1 ← stack-2) [was on #72]
+   └─ #74 baz (stack-2 ← stack-3)
 
 Dry run mode enabled. The following PRs would be rebased:
   #73 bar (stack-1 ← stack-2) (update base branch to main)
@@ -61,12 +65,13 @@ Dry run mode enabled. The following PRs would be rebased:
 	}, {
 		name: "test-dry-run-multiple",
 		expected: `✔ Fetching pull requests...
+
 Pull Requests
-├─  #78 foo (main ← stack-1)
-│   └─  #79 bar (stack-1 ← stack-2)
-│       └─  #80 baz (stack-2 ← stack-3)
-└─  #82 bbb (feature-a ← feature-b) [was on #81]
-    └─  #83 ccc (feature-b ← feature-c)
+├─ #78 foo (main ← stack-1)
+│  └─ #79 bar (stack-1 ← stack-2)
+│     └─ #80 baz (stack-2 ← stack-3)
+└─ #82 bbb (feature-a ← feature-b) [was on #81]
+   └─ #83 ccc (feature-b ← feature-c)
 
 Dry run mode enabled. The following PRs would be rebased:
   #82 bbb (feature-a ← feature-b) (update base branch to main)
@@ -75,9 +80,10 @@ Dry run mode enabled. The following PRs would be rebased:
 	}, {
 		name: "test-dry-run-rebase-1",
 		expected: `✔ Fetching pull requests...
+
 Pull Requests
-└─  #59 bar (stack-1 ← stack-2) [was on #58]
-    └─  #60 baz (stack-2 ← stack-3)
+└─ #59 bar (stack-1 ← stack-2) [was on #58]
+   └─ #60 baz (stack-2 ← stack-3)
 
 Dry run mode enabled. The following PRs would be rebased:
   #59 bar (stack-1 ← stack-2) (update base branch to main)
@@ -86,9 +92,10 @@ Dry run mode enabled. The following PRs would be rebased:
 	}, {
 		name: "test-dry-run-rebase-hard-1",
 		expected: `✔ Fetching pull requests...
+
 Pull Requests
-└─  #65 bar (stack-1 ← stack-2) [was on #64]
-    └─  #66 baz (stack-2 ← stack-3)
+└─ #65 bar (stack-1 ← stack-2) [was on #64]
+   └─ #66 baz (stack-2 ← stack-3)
 
 Dry run mode enabled. The following PRs would be rebased:
   #65 bar (stack-1 ← stack-2) (update base branch to main)
@@ -96,9 +103,10 @@ Dry run mode enabled. The following PRs would be rebased:
 `}, {
 		name: "test-dry-run-rebase-hard-2",
 		expected: `✔ Fetching pull requests...
+
 Pull Requests
-└─  #76 bar (stack-1 ← stack-2) [was on #75]
-    └─  #77 baz (stack-2 ← stack-3)
+└─ #76 bar (stack-1 ← stack-2) [was on #75]
+   └─ #77 baz (stack-2 ← stack-3)
 
 Dry run mode enabled. The following PRs would be rebased:
   #76 bar (stack-1 ← stack-2) (update base branch to main)
@@ -107,10 +115,11 @@ Dry run mode enabled. The following PRs would be rebased:
 	}, {
 		name: "test-dry-run-squash-1",
 		expected: `✔ Fetching pull requests...
+
 Pull Requests
-└─  #51 foo (main ← stack-1)
-    └─  #52 bar (stack-1 ← stack-2)
-        └─  #53 baz (stack-2 ← stack-3)
+└─ #51 foo (main ← stack-1)
+   └─ #52 bar (stack-1 ← stack-2)
+      └─ #53 baz (stack-2 ← stack-3)
 
 Dry run mode enabled. The following PRs would be rebased:
 ✔ No broken PRs found.
@@ -118,9 +127,10 @@ Dry run mode enabled. The following PRs would be rebased:
 	}, {
 		name: "test-dry-run-squash-2",
 		expected: `✔ Fetching pull requests...
+
 Pull Requests
-└─  #52 bar (stack-1 ← stack-2) [was on #51]
-    └─  #53 baz (stack-2 ← stack-3)
+└─ #52 bar (stack-1 ← stack-2) [was on #51]
+   └─ #53 baz (stack-2 ← stack-3)
 
 Dry run mode enabled. The following PRs would be rebased:
   #52 bar (stack-1 ← stack-2) (update base branch to main)
@@ -129,9 +139,10 @@ Dry run mode enabled. The following PRs would be rebased:
 	}, {
 		name: "test-dry-run-squash-3",
 		expected: `✔ Fetching pull requests...
+
 Pull Requests
-└─  #52 bar (main ← stack-2) [was on #51]
-    └─  #53 baz (stack-2 ← stack-3)
+└─ #52 bar (main ← stack-2) [was on #51]
+   └─ #53 baz (stack-2 ← stack-3)
 
 Dry run mode enabled. The following PRs would be rebased:
   #52 bar (main ← stack-2)
@@ -140,9 +151,10 @@ Dry run mode enabled. The following PRs would be rebased:
 	}, {
 		name: "test-dry-run-squash-hard-1",
 		expected: `✔ Fetching pull requests...
+
 Pull Requests
-└─  #68 bar (stack-1 ← stack-2) [was on #67]
-    └─  #69 baz (stack-2 ← stack-3)
+└─ #68 bar (stack-1 ← stack-2) [was on #67]
+   └─ #69 baz (stack-2 ← stack-3)
 
 Dry run mode enabled. The following PRs would be rebased:
   #68 bar (stack-1 ← stack-2) (update base branch to main)
@@ -151,9 +163,10 @@ Dry run mode enabled. The following PRs would be rebased:
 	}, {
 		name: "test-dry-run-squash-hard-2",
 		expected: `✔ Fetching pull requests...
+
 Pull Requests
-└─  #68 bar (main ← stack-2) [was on #67]
-    └─  #69 baz (stack-2 ← stack-3)
+└─ #68 bar (main ← stack-2) [was on #67]
+   └─ #69 baz (stack-2 ← stack-3)
 
 Dry run mode enabled. The following PRs would be rebased:
   #68 bar (main ← stack-2)
@@ -174,7 +187,8 @@ Dry run mode enabled. The following PRs would be rebased:
 				tt.Fatalf("Integration test failed: %v", err)
 			}
 
-			assert.Equal(tt, tc.expected, out.String())
+			_, after, _ := strings.Cut(out.String(), "[?1006l")
+			assert.Equal(tt, tc.expected, after)
 		})
 	}
 }
@@ -186,9 +200,10 @@ func TestAuto(t *testing.T) {
 	}{{
 		name: "test-auto-merge-1",
 		expected: `✔ Fetching pull requests...
+
 Pull Requests
-└─  #91 bar (stack-1 ← stack-2) [was on #90]
-    └─  #92 baz (stack-2 ← stack-3)
+└─ #91 bar (stack-1 ← stack-2) [was on #90]
+   └─ #92 baz (stack-2 ← stack-3)
 
 ✔ Rebasing #91 bar (stack-1 ← stack-2) onto main...
 ✔ Pushing #91...
@@ -199,9 +214,10 @@ Pull Requests
 	}, {
 		name: "test-auto-merge-2",
 		expected: `✔ Fetching pull requests...
+
 Pull Requests
-└─  #94 bar (stack-1 ← stack-2) [was on #93]
-    └─  #95 baz (stack-2 ← stack-3)
+└─ #94 bar (stack-1 ← stack-2) [was on #93]
+   └─ #95 baz (stack-2 ← stack-3)
 
 ✔ Rebasing #94 bar (stack-1 ← stack-2) onto main...
 ✔ Pushing #94...
@@ -212,10 +228,11 @@ Pull Requests
 	}, {
 		name: "test-auto-merge-conflict",
 		expected: `✔ Fetching pull requests...
+
 Pull Requests
-├─  #112 bar (main ← stack-2)
-│   └─  #113 baz (stack-2 ← stack-3)
-└─  #115 bbb (feature-a ← feature-b) [was on #114]
+├─ #112 bar (main ← stack-2)
+│  └─ #113 baz (stack-2 ← stack-3)
+└─ #115 bbb (feature-a ← feature-b) [was on #114]
 
 ✘ Failed to handle broken PR #115 due to rebase conflicts.
   Please resolve the conflicts manually and re-run the tool if needed.
@@ -225,9 +242,10 @@ Pull Requests
 	}, {
 		name: "test-auto-merge-trunk",
 		expected: `✔ Fetching pull requests...
+
 Pull Requests
-└─  #109 bbb (feature/trunk-a ← feature/trunk-b) [was on #108]
-    └─  #110 ccc (feature/trunk-b ← feature/trunk-c)
+└─ #109 bbb (feature/trunk-a ← feature/trunk-b) [was on #108]
+   └─ #110 ccc (feature/trunk-b ← feature/trunk-c)
 
 ✔ Rebasing #109 bbb (feature/trunk-a ← feature/trunk-b) onto trunk...
 ✔ Pushing #109...
@@ -254,7 +272,8 @@ Pull Requests
 				tt.Fatalf("Integration test failed: %v", err)
 			}
 
-			assert.Equal(tt, tc.expected, out.String())
+			_, after, _ := strings.Cut(out.String(), "[?1006l")
+			assert.Equal(tt, tc.expected, after)
 		})
 	}
 }
