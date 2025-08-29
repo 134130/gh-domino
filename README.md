@@ -2,6 +2,8 @@
 
 A GitHub CLI extension to rebase stacked pull requests like dominoes.
 
+![demo](./assets/demo.gif)
+
 ## What is it?
 
 When working with a chain of dependent pull requests (stacked PRs), merging the first PR in the stack breaks
