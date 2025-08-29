@@ -72,7 +72,7 @@ func Run(ctx context.Context, cfg Config) error {
 		sha, err := git.RevParse(ctx, "origin/"+pr.HeadRefName)
 		if err != nil {
 			write("Could not get SHA for %s: %v\n", pr.HeadRefName, err)
-			os.Exit(1)
+return fmt.Errorf("could not get SHA for %s: %w", pr.HeadRefName, err)
 		}
 		prHeadShas[pr.HeadRefName] = sha
 	}
