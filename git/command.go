@@ -93,7 +93,37 @@ type CommandModifier func(c *exec.Cmd)
 
 func WithStdout(stdout io.Writer) CommandModifier {
 	return func(c *exec.Cmd) {
-		c.Stdout = stdout
+		if stdout == nil {
+			return
+		}
+		if c.Stdout == nil {
+			c.Stdout = stdout
+		} else {
+			c.Stdout = io.MultiWriter(c.Stdout, stdout)
+		}
+	}
+}
+
+func WithStderr(stderr io.Writer) CommandModifier {
+	return func(c *exec.Cmd) {
+		if stderr == nil {
+			return
+		}
+		if c.Stderr == nil {
+			c.Stderr = stderr
+		} else {
+			c.Stderr = io.MultiWriter(c.Stderr, stderr)
+		}
+	}
+}
+
+func WithCombinedOutput(output io.Writer) CommandModifier {
+	return func(c *exec.Cmd) {
+		if output == nil {
+			return
+		}
+		WithStdout(output)(c)
+		WithStderr(output)(c)
 	}
 }
 

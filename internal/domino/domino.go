@@ -6,55 +6,72 @@ import (
 	"fmt"
 	"os"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/134130/gh-domino/git"
 	"github.com/134130/gh-domino/gitobj"
 	"github.com/134130/gh-domino/internal/color"
+	"github.com/134130/gh-domino/internal/ui"
 
 	"github.com/134130/gh-domino/internal/spinner"
 	"github.com/134130/gh-domino/internal/stackedpr"
 	"github.com/134130/gh-domino/internal/util"
 )
 
-var stderr = func(msg string, args ...interface{}) {}
+var write = func(msg string, args ...interface{}) {}
 
 func success(msg string) {
-	stderr("%s %s\n", color.Green("✔"), msg)
+	write("%s %s\n", color.Green("✔"), msg)
 }
 
 func failure(msg string) {
-	stderr("%s %s\n", color.Red("✘"), msg)
+	write("%s %s\n", color.Red("✘"), msg)
 }
 
 func Run(ctx context.Context, cfg Config) error {
-	sp := spinner.New("Fetching pull requests...", cfg.Writer)
-	sp.Start()
-
-	stderr = func(msg string, args ...interface{}) {
+	write = func(msg string, args ...interface{}) {
 		_, _ = fmt.Fprintf(cfg.Writer, msg, args...)
 	}
 
-	if err := git.Fetch(ctx, "origin"); err != nil {
-		sp.Stop()
+	ctx, cancel := context.WithCancel(ctx)
+
+	m := ui.NewModel(ctx, cancel)
+	p := tea.NewProgram(m, tea.WithOutput(cfg.Writer))
+	go func() {
+		if _, err := p.Run(); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "Error running UI: %v\n", err)
+			os.Exit(1)
+		}
+	}()
+	defer func() {
+		p.Quit()
+		p.Wait()
+	}()
+
+	lw := ui.NewLogWriter(m, p)
+	_, _ = lw.WriteString("git fetch origin")
+	if err := git.Fetch(ctx, "origin", git.WithStdout(lw)); err != nil {
 		return fmt.Errorf("failed to fetch origin: %s", err)
 	}
 
+	_, _ = lw.WriteString("gh pr list --author @me")
 	prs, err := git.ListPullRequests(ctx)
 	if err != nil {
-		sp.Stop()
 		return fmt.Errorf("failed to list pull requests: %s", err)
 	}
 
+	_, _ = lw.WriteString("gh pr list --author @me --state merged")
 	mergedPRs, err := git.ListMergedPullRequests(ctx)
 	if err != nil {
-		sp.Stop()
 		return fmt.Errorf("failed to list merged pull requests: %s", err)
 	}
 
 	prHeadShas := make(map[string]string)
 	for _, pr := range prs {
+		_, _ = fmt.Fprintf(lw, "git rev-parse origin/%s", pr.HeadRefName)
 		sha, err := git.RevParse(ctx, "origin/"+pr.HeadRefName)
 		if err != nil {
-			stderr("Could not get SHA for %s: %v\n", pr.HeadRefName, err)
+			write("Could not get SHA for %s: %v\n", pr.HeadRefName, err)
 			os.Exit(1)
 		}
 		prHeadShas[pr.HeadRefName] = sha
@@ -62,17 +79,22 @@ func Run(ctx context.Context, cfg Config) error {
 
 	roots, err := stackedpr.BuildDependencyTree(ctx, prs, mergedPRs, prHeadShas)
 	if err != nil {
-		sp.Stop()
 		return err
 	}
-	sp.Stop()
+
+	// Process the dependency tree to identify and handle broken PRs.
+
+	p.Send(ui.DoneMsg{})
+	p.Quit()
+	p.Wait()
 	success("Fetching pull requests...")
 
-	stderr(stackedpr.RenderDependencyTree(roots))
-	stderr("\n\n")
+	write("\n")
+	write(stackedpr.RenderDependencyTree(roots))
+	write("\n\n")
 
 	if *cfg.DryRun {
-		stderr("Dry run mode enabled. The following PRs would be rebased:\n")
+		write("Dry run mode enabled. The following PRs would be rebased:\n")
 	}
 
 	prMap := make(map[string]gitobj.PullRequest)
@@ -137,7 +159,7 @@ func processDependencyTree(
 
 	isBroken, newBase, upstream, err := determinePRState(ctx, pr, prMap, mergedPRsByHeadRef, prHeadShas, cfg, mergedPRs)
 	if err != nil {
-		stderr("Error determining state for PR %s: %v\n", pr.PRNumberString(), err)
+		write("Error determining state for PR %s: %v\n", pr.PRNumberString(), err)
 		// Continue to children even if parent has an error
 	} else if isBroken {
 		if newBase == "" {
@@ -266,26 +288,26 @@ func handleBrokenPR(
 		if brokenPR.PR.BaseRefName != brokenPR.NewBase {
 			updateBaseBranchString = fmt.Sprintf(" (update base branch to %s)", color.Cyan(brokenPR.NewBase))
 		}
-		stderr("  %s%s\n", brokenPR.PR.String(), updateBaseBranchString)
+		write("  %s%s\n", brokenPR.PR.String(), updateBaseBranchString)
 		prHeadShas[brokenPR.PR.HeadRefName] = "dummy-sha-after-rebase"
 		return nil
 	}
 
 	// --- Rebase ---
 	if !*cfg.Auto {
-		stderr("PR %s needs to be rebased onto %s\n", brokenPR.PR.String(), color.Cyan(brokenPR.NewBase))
+		write("PR %s needs to be rebased onto %s\n", brokenPR.PR.String(), color.Cyan(brokenPR.NewBase))
 		var cmd string
 		if brokenPR.Upstream != "" {
 			cmd = fmt.Sprintf("git rebase --onto %s %s %s", "origin/"+brokenPR.NewBase, brokenPR.Upstream, brokenPR.PR.HeadRefName)
 		} else {
 			cmd = fmt.Sprintf("git rebase %s %s", "origin/"+brokenPR.NewBase, brokenPR.PR.HeadRefName)
 		}
-		stderr("  Suggested command: %s\n", color.Yellow(cmd))
+		write("  Suggested command: %s\n", color.Yellow(cmd))
 		response, err := util.AskForConfirmation("Run this command?")
 		if err != nil {
 			return fmt.Errorf("error reading input: %s", err)
 		} else if !response {
-			stderr("Skipping.\n")
+			write("Skipping.\n")
 			return nil // Not an error, just skipping this PR.
 		}
 	}
@@ -307,12 +329,12 @@ func handleBrokenPR(
 
 	// --- Push ---
 	if !*cfg.Auto {
-		stderr("Rebase completed successfully.\n")
+		write("Rebase completed successfully.\n")
 		response, err := util.AskForConfirmation("Continue to push the rebased branch and update the PR?")
 		if err != nil {
 			return fmt.Errorf("error reading input: %s", err)
 		} else if !response {
-			stderr("Skipping push and PR update.\n")
+			write("Skipping push and PR update.\n")
 			return nil
 		}
 	}
@@ -334,14 +356,14 @@ func handleBrokenPR(
 	// --- Update Base Branch ---
 	if brokenPR.PR.BaseRefName != brokenPR.NewBase {
 		if !*cfg.Auto {
-			stderr("Branch %s needs to be updated to base branch %s\n", color.Cyan(brokenPR.PR.HeadRefName), color.Cyan(brokenPR.NewBase))
+			write("Branch %s needs to be updated to base branch %s\n", color.Cyan(brokenPR.PR.HeadRefName), color.Cyan(brokenPR.NewBase))
 			cmd := fmt.Sprintf("gh pr edit %s --base %s", brokenPR.PR.PRNumberString(), brokenPR.NewBase)
-			stderr("  Suggested command: %s\n", color.Yellow(cmd))
+			write("  Suggested command: %s\n", color.Yellow(cmd))
 			response, err := util.AskForConfirmation("Run this command?")
 			if err != nil {
 				return fmt.Errorf("error reading input: %s", err)
 			} else if !response {
-				stderr("Skipping base branch update.\n")
+				write("Skipping base branch update.\n")
 				return nil // Not an error, just skipping this PR.
 			}
 		}

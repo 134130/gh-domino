@@ -108,9 +108,9 @@ func Push(ctx context.Context, branch string) error {
 	return NewCommand("git", "push", "--force-with-lease", "origin", branch).Run(ctx)
 }
 
-func Fetch(ctx context.Context, remote string) error {
+func Fetch(ctx context.Context, remote string, mods ...CommandModifier) error {
 	args := []string{"fetch", remote}
-	return NewCommand("git", args...).Run(ctx)
+	return NewCommand("git", args...).Run(ctx, mods...)
 }
 
 func IsAncestor(ctx context.Context, ancestor, descendant string) (bool, error) {

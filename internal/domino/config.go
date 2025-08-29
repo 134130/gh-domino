@@ -17,7 +17,7 @@ func ParseConfig() (Config, error) {
 	c := Config{
 		Auto:   flag.Bool("auto", false, "Enable auto mode to rebase without confirmation"),
 		DryRun: flag.Bool("dry-run", false, "Don't rebase the changes"),
-		Writer: os.Stderr,
+		Writer: os.Stdout,
 	}
 	flag.Parse()
 
