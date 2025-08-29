@@ -17,15 +17,15 @@ func RenderDependencyTree(nodes []*Node) string {
 
 	root.Indenter(func(children tree.Children, index int) string {
 		if children.Length()-1 == index {
-			return "   "
+			return "  "
 		}
-		return "│  "
+		return "│ "
 	})
 	root.Enumerator(func(children tree.Children, index int) string {
 		if children.Length()-1 == index {
-			return "└─ "
+			return "└─"
 		}
-		return "├─ "
+		return "├─"
 	})
 
 	return root.String()
