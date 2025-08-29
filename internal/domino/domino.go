@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -37,12 +36,14 @@ func Run(ctx context.Context, cfg Config) error {
 
 	m := ui.NewModel(ctx, cancel)
 	p := tea.NewProgram(m, tea.WithOutput(cfg.Writer))
+
 	go func() {
 		if _, err := p.Run(); err != nil {
-			_, _ = fmt.Fprintf(os.Stderr, "Error running UI: %v\n", err)
-			os.Exit(1)
+			cancel()
+			failure(fmt.Sprintf("Failed to start UI: %v", err))
 		}
 	}()
+
 	defer func() {
 		p.Quit()
 		p.Wait()
@@ -72,7 +73,7 @@ func Run(ctx context.Context, cfg Config) error {
 		sha, err := git.RevParse(ctx, "origin/"+pr.HeadRefName)
 		if err != nil {
 			write("Could not get SHA for %s: %v\n", pr.HeadRefName, err)
-return fmt.Errorf("could not get SHA for %s: %w", pr.HeadRefName, err)
+			return fmt.Errorf("could not get SHA for %s: %w", pr.HeadRefName, err)
 		}
 		prHeadShas[pr.HeadRefName] = sha
 	}
@@ -82,10 +83,7 @@ return fmt.Errorf("could not get SHA for %s: %w", pr.HeadRefName, err)
 		return err
 	}
 
-	// Process the dependency tree to identify and handle broken PRs.
-
 	p.Send(ui.DoneMsg{})
-	p.Quit()
 	p.Wait()
 	success("Fetching pull requests...")
 
