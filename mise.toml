@@ -13,12 +13,13 @@ export GITHUB_TOKEN=$(gh auth token)
 goreleaser
 """
 
-[tasks.check]
+[tasks.lint]
 run = """
 #!/usr/bin/env bash
 set -eou pipefail
 go mod tidy
 golangci-lint run ./...
+go test ./...
 """
 
 [tasks.fix]
@@ -27,4 +28,5 @@ run = """
 set -eou pipefail
 go mod tidy
 golangci-lint run --fix ./...
+go test ./...
 """
