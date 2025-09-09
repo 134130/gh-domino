@@ -61,7 +61,7 @@ func Run(ctx context.Context, cfg Config) error {
 		return fmt.Errorf("failed to list pull requests: %s", err)
 	}
 
-	_, _ = lw.WriteString("gh pr list --author @me --state merged")
+	_, _ = lw.WriteString("gh pr list --author @me --state merged --search sort:updated")
 	mergedPRs, err := git.ListMergedPullRequests(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list merged pull requests: %s", err)
