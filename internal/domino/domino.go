@@ -32,6 +32,14 @@ func Run(ctx context.Context, cfg Config) error {
 		_, _ = fmt.Fprintf(cfg.Writer, msg, args...)
 	}
 
+	var err error
+	if cfg.DumpTo != "" {
+		git.CommandRunner, err = git.NewLoggingRunner(cfg.DumpTo)
+		if err != nil {
+			return fmt.Errorf("failed to create logging runner: %w", err)
+		}
+	}
+
 	ctx, cancel := context.WithCancel(ctx)
 
 	m := ui.NewModel(ctx, cancel)
@@ -91,7 +99,7 @@ func Run(ctx context.Context, cfg Config) error {
 	write(stackedpr.RenderDependencyTree(roots))
 	write("\n\n")
 
-	if *cfg.DryRun {
+	if cfg.DryRun {
 		write("Dry run mode enabled. The following PRs would be rebased:\n")
 	}
 
@@ -234,7 +242,7 @@ func determinePRState(
 
 	// --- Check 3: In a dry run, was the parent PR "rebased" earlier in this run? ---
 	isParentRebasedInDryRun := false
-	if *cfg.DryRun {
+	if cfg.DryRun {
 		if parentPR, ok := prMap[pr.BaseRefName]; ok {
 			baseShaInMap := prHeadShas[parentPR.HeadRefName]
 			if baseShaInMap == "dummy-sha-after-rebase" {
@@ -281,7 +289,7 @@ func handleBrokenPR(
 	cfg Config,
 	prHeadShas map[string]string,
 ) error {
-	if *cfg.DryRun {
+	if cfg.DryRun {
 		updateBaseBranchString := ""
 		if brokenPR.PR.BaseRefName != brokenPR.NewBase {
 			updateBaseBranchString = fmt.Sprintf(" (update base branch to %s)", color.Cyan(brokenPR.NewBase))
@@ -292,7 +300,7 @@ func handleBrokenPR(
 	}
 
 	// --- Rebase ---
-	if !*cfg.Auto {
+	if !cfg.Auto {
 		write("PR %s needs to be rebased onto %s\n", brokenPR.PR.String(), color.Cyan(brokenPR.NewBase))
 		var cmd string
 		if brokenPR.Upstream != "" {
@@ -326,7 +334,7 @@ func handleBrokenPR(
 	success(msg)
 
 	// --- Push ---
-	if !*cfg.Auto {
+	if !cfg.Auto {
 		write("Rebase completed successfully.\n")
 		response, err := util.AskForConfirmation("Continue to push the rebased branch and update the PR?")
 		if err != nil {
@@ -353,7 +361,7 @@ func handleBrokenPR(
 
 	// --- Update Base Branch ---
 	if brokenPR.PR.BaseRefName != brokenPR.NewBase {
-		if !*cfg.Auto {
+		if !cfg.Auto {
 			write("Branch %s needs to be updated to base branch %s\n", color.Cyan(brokenPR.PR.HeadRefName), color.Cyan(brokenPR.NewBase))
 			cmd := fmt.Sprintf("gh pr edit %s --base %s", brokenPR.PR.PRNumberString(), brokenPR.NewBase)
 			write("  Suggested command: %s\n", color.Yellow(cmd))
