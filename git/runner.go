@@ -93,7 +93,7 @@ func (r *LoggingRunner) Run(ctx context.Context, cmd string, args []string, mods
 		}
 	}
 
-	if err := w.Encode(log); err != nil {
+	if err := w.Encode([]*commandLog{log}); err != nil {
 		return fmt.Errorf("failed to write log: %w", err)
 	}
 
