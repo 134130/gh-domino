@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -41,35 +42,41 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
-	m := ui.NewModel(ctx, cancel)
-	p := tea.NewProgram(m, tea.WithOutput(cfg.Writer))
+	var gitCmdWriter io.Writer
+	if cfg.Headless {
+		gitCmdWriter = io.Discard
+	} else {
+		m := ui.NewModel(ctx, cancel)
+		p := tea.NewProgram(m, tea.WithOutput(cfg.Writer))
 
-	go func() {
-		if _, err := p.Run(); err != nil {
-			cancel()
-			failure(fmt.Sprintf("Failed to start UI: %v", err))
-		}
-	}()
+		go func() {
+			if _, err := p.Run(); err != nil {
+				cancel()
+				failure(fmt.Sprintf("Failed to start UI: %v", err))
+			}
+		}()
 
-	defer func() {
-		p.Quit()
-		p.Wait()
-	}()
+		defer func() {
+			p.Send(ui.DoneMsg{})
+			p.Wait()
+		}()
+		gitCmdWriter = ui.NewLogWriter(m, p)
+	}
 
-	lw := ui.NewLogWriter(m, p)
-	_, _ = lw.WriteString("git fetch origin")
-	if err := git.Fetch(ctx, "origin", git.WithStdout(lw)); err != nil {
+	_, _ = io.WriteString(gitCmdWriter, "git fetch origin")
+	if err := git.Fetch(ctx, "origin", git.WithStdout(gitCmdWriter)); err != nil {
 		return fmt.Errorf("failed to fetch origin: %s", err)
 	}
 
-	_, _ = lw.WriteString("gh pr list --author @me")
+	_, _ = io.WriteString(gitCmdWriter, "gh pr list --author @me")
 	prs, err := git.ListPullRequests(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list pull requests: %s", err)
 	}
 
-	_, _ = lw.WriteString("gh pr list --author @me --state merged --search sort:updated")
+	_, _ = io.WriteString(gitCmdWriter, "gh pr list --author @me --state merged --search sort:updated")
 	mergedPRs, err := git.ListMergedPullRequests(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list merged pull requests: %s", err)
@@ -77,7 +84,7 @@ func Run(ctx context.Context, cfg Config) error {
 
 	prHeadShas := make(map[string]string)
 	for _, pr := range prs {
-		_, _ = fmt.Fprintf(lw, "git rev-parse origin/%s", pr.HeadRefName)
+		_, _ = fmt.Fprintf(gitCmdWriter, "git rev-parse origin/%s", pr.HeadRefName)
 		sha, err := git.RevParse(ctx, "origin/"+pr.HeadRefName)
 		if err != nil {
 			write("Could not get SHA for %s: %v\n", pr.HeadRefName, err)
@@ -91,8 +98,6 @@ func Run(ctx context.Context, cfg Config) error {
 		return err
 	}
 
-	p.Send(ui.DoneMsg{})
-	p.Wait()
 	success("Fetching pull requests...")
 
 	write("\n")

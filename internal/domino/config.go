@@ -8,10 +8,11 @@ import (
 )
 
 type Config struct {
-	Auto   bool
-	DryRun bool
-	DumpTo string
-	Writer io.Writer
+	Auto     bool
+	DryRun   bool
+	DumpTo   string
+	Headless bool
+	Writer   io.Writer
 }
 
 func ParseConfig() (Config, error) {
@@ -22,6 +23,7 @@ func ParseConfig() (Config, error) {
 	flag.BoolVar(&c.Auto, "auto", false, "Enable auto mode to rebase with confirmation")
 	flag.BoolVar(&c.DryRun, "dry-run", false, "Don't rebase the changes")
 	flag.StringVar(&c.DumpTo, "dump-to", "", "Dump git commands to a file for testing purposes")
+	flag.BoolVar(&c.Headless, "headless", false, "Disable UI")
 
 	flag.Parse()
 

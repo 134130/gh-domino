@@ -14,10 +14,6 @@ import (
 	"github.com/134130/gh-domino/git"
 )
 
-func ptr[T any](v T) *T {
-	return &v
-}
-
 type YAMLCommand struct {
 	Command  string
 	Stdout   string
