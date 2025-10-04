@@ -32,6 +32,8 @@
   stdout: bb05d0614ec671cc6f546411ce416537a9ac9d08
 - command: "git merge-base origin/main d878db1ed89159318c518fd53a96e75851ff91db"
   stdout: 909d871a7213af3fde9dc48c0103fa23d08b2de5
+- command: "git merge-base --is-ancestor 909d871a7213af3fde9dc48c0103fa23d08b2de5 bb05d0614ec671cc6f546411ce416537a9ac9d08"
+  exitCode: 1
 - command: "git merge-base --is-ancestor bb05d0614ec671cc6f546411ce416537a9ac9d08 d878db1ed89159318c518fd53a96e75851ff91db"
   exitCode: 1
 - command: "git merge-base --is-ancestor e512602c242d5ff81742f2083778c7b6c2067dcc d878db1ed89159318c518fd53a96e75851ff91db"

@@ -168,7 +168,7 @@ func processDependencyTree(
 
 	totalProcessed := 0
 
-	isBroken, newBase, upstream, err := determinePRState(ctx, pr, prMap, mergedPRsByHeadRef, prHeadShas, cfg, mergedPRs)
+	isBroken, newBase, upstream, err := determinePRState(ctx, pr, node.OriginalBase, prMap, mergedPRsByHeadRef, prHeadShas, cfg, mergedPRs)
 	if err != nil {
 		write("Error determining state for PR %s: %v\n", pr.PRNumberString(), err)
 		// Continue to children even if parent has an error
@@ -202,24 +202,56 @@ func processDependencyTree(
 func determinePRState(
 	ctx context.Context,
 	pr gitobj.PullRequest,
+	originalBase *gitobj.PullRequest,
 	prMap map[string]gitobj.PullRequest,
 	mergedPRsByHeadRef map[string]gitobj.PullRequest,
 	prHeadShas map[string]string,
 	cfg Config,
 	mergedPRs []gitobj.PullRequest,
 ) (isBroken bool, newBase string, upstream string, err error) {
+	if originalBase != nil {
+		if originalBase.MergeCommit.Sha != "" && len(originalBase.Commits) > 0 {
+			isSquash := true
+			for _, commit := range originalBase.Commits {
+				isAncestor, err := git.IsAncestor(ctx, commit.Oid, originalBase.MergeCommit.Sha)
+				if err != nil {
+					return false, "", "", fmt.Errorf("failed to check ancestry for commit %s: %v", commit.Oid, err)
+				}
+				if isAncestor {
+					isSquash = false
+					break
+				}
+			}
+
+			if isSquash {
+				// Squash merge detected
+				lastCommit := originalBase.Commits[len(originalBase.Commits)-1].Oid
+				return true, originalBase.BaseRefName, lastCommit, nil
+			}
+		}
+		return true, originalBase.BaseRefName, "", nil
+	}
+
 	// --- Check 1: Is the base a merged PR? ---
 	// This applies only to root PRs in a stack.
 	if _, isStackedPR := prMap[pr.BaseRefName]; !isStackedPR {
 		if mergedBasePR, isMerged := mergedPRsByHeadRef[pr.BaseRefName]; isMerged {
 			if mergedBasePR.MergeCommit.Sha != "" && len(mergedBasePR.Commits) > 0 {
-				lastCommit := mergedBasePR.Commits[len(mergedBasePR.Commits)-1].Oid
-				isAncestor, err := git.IsAncestor(ctx, lastCommit, mergedBasePR.MergeCommit.Sha)
-				if err != nil {
-					return false, "", "", fmt.Errorf("failed to check ancestry: %v", err)
+				isSquash := true
+				for _, commit := range mergedBasePR.Commits {
+					isAncestor, err := git.IsAncestor(ctx, commit.Oid, mergedBasePR.MergeCommit.Sha)
+					if err != nil {
+						return false, "", "", fmt.Errorf("failed to check ancestry for commit %s: %v", commit.Oid, err)
+					}
+					if isAncestor {
+						isSquash = false
+						break
+					}
 				}
-				if !isAncestor {
+
+				if isSquash {
 					// Squash merge detected
+					lastCommit := mergedBasePR.Commits[len(mergedBasePR.Commits)-1].Oid
 					return true, mergedBasePR.BaseRefName, lastCommit, nil
 				}
 			}

@@ -32,6 +32,8 @@
   stdout: 5f72a152629797137ea089fe2c0b233a40c638c4
 - command: "git log --pretty=%H 5f72a152629797137ea089fe2c0b233a40c638c4..origin/main"
   stdout: 
+- command: "git merge-base --is-ancestor d44b1e7ee3170cac0b89aea3e26c15b593bf1da8 ba652e2d8ed795f4a1a4c1e0937f77ac7309b54e"
+  exitCode: 1
 - command: "git merge-base --is-ancestor 5f72a152629797137ea089fe2c0b233a40c638c4 87f9c09143a4937e4510d276fa649d07cd64bfe3"
   exitCode: 1
 - command: "git merge-base --is-ancestor 5f72a152629797137ea089fe2c0b233a40c638c4 ba652e2d8ed795f4a1a4c1e0937f77ac7309b54e"

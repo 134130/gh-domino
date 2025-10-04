@@ -75,6 +75,8 @@
   exitCode: 1
 - command: git merge-base --is-ancestor 6ecbea6ac7367097412464b74162ade79da964f7 2d40b50697f285b80dec689bc018e203d894fc0d
   exitCode: 1
+- command: git merge-base --is-ancestor 6ecbea6ac7367097412464b74162ade79da964f7 ef9d8cdb86e78afcc4ee1cb37cb63731cea3bf4e
+  exitCode: 1
 - command: git merge-base origin/main 2d40b50697f285b80dec689bc018e203d894fc0d
   stdout: f66dea3e105b5cd82a6a4a517ea8aec74098eb01
 - command: git rev-parse origin/stack-2

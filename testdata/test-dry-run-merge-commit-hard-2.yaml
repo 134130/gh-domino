@@ -29,6 +29,8 @@
   stdout: a75f3174bc4756fd7f1e3e7a1d523a9b88f398ea
 - command: "git rev-parse origin/stack-3"
   stdout: 956ff5331bbf2634f6b6869009ce61c7ab4dadd6
+- command: "git merge-base --is-ancestor fafd4646607efb7142e4422249ee5fe99e5c6ace f7f09f189ce0d4f2b0721bc78f8219d4dd048b99"
+  exitCode: 0
 - command: "git merge-base --is-ancestor 98981e7267f290a215b348ca0d50a84a4646c296 a75f3174bc4756fd7f1e3e7a1d523a9b88f398ea"
   exitCode: 1
 - command: "git merge-base origin/stack-2 956ff5331bbf2634f6b6869009ce61c7ab4dadd6"

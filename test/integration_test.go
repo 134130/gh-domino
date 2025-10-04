@@ -182,8 +182,7 @@ Pull Requests
 └─ #3527 refactor: Rename Schedule recurrence type from MINUTELY to CUSTOM (main ← cooper/schedule/minutely-custom) [was on #3510]
 
 Dry run mode enabled. The following PRs would be rebased:
-  #68 bar (main ← stack-2)
-  #69 baz (stack-2 ← stack-3)
+  #3527 refactor: Rename Schedule recurrence type from MINUTELY to CUSTOM (main ← cooper/schedule/minutely-custom)
 `,
 		}}
 
