@@ -2,7 +2,7 @@
 
 ## Phase 1: Implement Temporary Worktree Management
 
-- [ ] Task: Create a new module or utility for managing temporary Git worktrees.
+- [x] Task: Create a new module or utility for managing temporary Git worktrees. [6555caf]
     - [ ] Sub-task: Implement a function to create a new worktree at a temporary path.
     - [ ] Sub-task: Implement a function to remove the worktree.
 - [ ] Task: Integrate worktree creation and cleanup into the main `gh domino` command flow.
