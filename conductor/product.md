@@ -13,4 +13,5 @@ The primary target users for `gh-domino` are developers who actively work with s
 - **Automated Rebase:** Automatically rebases dependent PRs when a base PR is merged, maintaining the integrity of the pull request stack.
 - **Zero Configuration:** Requires no setup or configuration, allowing developers to integrate it seamlessly into their existing workflows.
 - **No State Management:** Operates without special branch naming conventions or local state files, working directly with existing branches and PRs.
+- **Isolated Rebase Operations:** Performs rebase operations within a temporary Git worktree, ensuring the user's main workspace remains clean and unpolluted.
 - **GitHub Merge Strategy Compatibility:** Works flawlessly with all of GitHub's merge strategies, including Merge Commit, Squash and Merge, and Rebase and Merge.
