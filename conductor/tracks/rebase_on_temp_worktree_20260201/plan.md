@@ -26,8 +26,8 @@
     - [x] Sub-task: Test worktree creation.
     - [x] Sub-task: Test worktree removal.
     - [x] Sub-task: Test error handling for worktree operations.
-- [ ] Task: Write integration tests to verify the end-to-end rebase process using the temporary worktree.
-    - [ ] Sub-task: Test a successful rebase scenario.
-    - [ ] Sub-task: Test a rebase scenario with conflicts.
-    - [ ] Sub-task: Test that the user's original worktree remains untouched.
+- [x] Task: Write integration tests to verify the end-to-end rebase process using the temporary worktree.
+    - [x] Sub-task: Test a successful rebase scenario.
+    - [x] Sub-task: Test a rebase scenario with conflicts.
+    - [x] Sub-task: Test that the user's original worktree remains untouched.
 - [ ] Task: Conductor - User Manual Verification 'Phase 3: Testing and Validation' (Protocol in workflow.md)
