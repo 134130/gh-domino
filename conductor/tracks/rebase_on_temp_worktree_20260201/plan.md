@@ -6,7 +6,7 @@
     - [ ] Sub-task: Implement a function to create a new worktree at a temporary path.
     - [ ] Sub-task: Implement a function to remove the worktree.
 - [x] Task: Integrate worktree creation and cleanup into the main `gh domino` command flow. [4c315ce]
-- [ ] Task: Automatically create a temporary worktree if `WorktreePath` is empty.
+- [x] Task: Automatically create a temporary worktree if `WorktreePath` is empty. [f7e3ed4]
 - [ ] Task: Conductor - User Manual Verification 'Phase 1: Implement Temporary Worktree Management' (Protocol in workflow.md)
 
 ## Phase 2: Adapt Rebase Logic to Use Worktree
