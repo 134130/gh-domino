@@ -54,3 +54,7 @@
      + c152f90...9c75070 feature/trunk-c -> feature/trunk-c (forced update)
 - command: git rev-parse origin/feature/trunk-c
   stdout: 9c75070fa1cde19777e6a33a47c103e0461d6799
+
+- command: "git rev-parse --abbrev-ref HEAD"
+  stdout: |
+    main

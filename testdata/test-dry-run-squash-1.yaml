@@ -852,3 +852,7 @@
         "url": "https://github.com/134130/test-domino/pull/1"
       }
     ]
+
+- command: "git rev-parse --abbrev-ref HEAD"
+  stdout: |
+    main

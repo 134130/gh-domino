@@ -156,3 +156,6 @@
     7b01f577b16fc5ae0524cbcbeb0d29af74121472
   stderr: ""
   exitCode: 0
+- command: "git rev-parse --abbrev-ref HEAD"
+  stdout: |
+    main
