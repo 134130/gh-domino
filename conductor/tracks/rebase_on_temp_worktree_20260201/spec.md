@@ -4,7 +4,7 @@
 This feature will modify the rebase process of `gh-domino` to use a temporary Git worktree. This will prevent the user's current workspace from being polluted with intermediate rebase operations, branch checkouts, and potential conflicts. By isolating the rebase process, we can ensure that the user's work-in-progress is not disturbed.
 
 ## 2. Functional Requirements
-- The rebase operation must be performed in a separate, temporary Git worktree.
+- The rebase operation must be performed in a separate, temporary Git worktree. This worktree will be automatically created if a specific path is not provided.
 - The temporary worktree should be created at the beginning of the rebase process and removed at the end.
 - All Git operations related to the rebase (fetching, checking out branches, rebasing, pushing) must be executed within the temporary worktree.
 - The user's original worktree must remain unchanged throughout the rebase process.
