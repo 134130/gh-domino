@@ -22,10 +22,10 @@
 
 ## Phase 3: Testing and Validation
 
-- [ ] Task: Write unit tests for the new worktree management module.
-    - [ ] Sub-task: Test worktree creation.
-    - [ ] Sub-task: Test worktree removal.
-    - [ ] Sub-task: Test error handling for worktree operations.
+- [x] Task: Write unit tests for the new worktree management module.
+    - [x] Sub-task: Test worktree creation.
+    - [x] Sub-task: Test worktree removal.
+    - [x] Sub-task: Test error handling for worktree operations.
 - [ ] Task: Write integration tests to verify the end-to-end rebase process using the temporary worktree.
     - [ ] Sub-task: Test a successful rebase scenario.
     - [ ] Sub-task: Test a rebase scenario with conflicts.
