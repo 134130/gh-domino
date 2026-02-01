@@ -18,7 +18,7 @@
 - [x] Task: Refactor the rebase logic to be aware of the worktree context.
     - [x] Sub-task: Pass the worktree path to the relevant functions.
     - [x] Sub-task: Adjust any file path manipulations to be relative to the worktree.
-- [ ] Task: Conductor - User Manual Verification 'Phase 2: Adapt Rebase Logic to Use Worktree' (Protocol in workflow.md)
+- [~] Task: Conductor - User Manual Verification 'Phase 2: Adapt Rebase Logic to Use Worktree' (Protocol in workflow.md)
 
 ## Phase 3: Testing and Validation
 
