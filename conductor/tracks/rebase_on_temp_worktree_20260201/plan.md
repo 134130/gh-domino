@@ -12,9 +12,9 @@
 ## Phase 2: Adapt Rebase Logic to Use Worktree
 
 - [x] Task: Modify the existing Git command runner to execute commands within the temporary worktree.
-    - [ ] Sub-task: Update the `git rebase` command to operate within the worktree.
-    - [ ] Sub-task: Update the `git push` command to operate from the worktree.
-    - [ ] Sub-task: Update any other relevant Git commands (e.g., `git fetch`, `git checkout`) to use the worktree.
+    - [x] Sub-task: Update the `git rebase` command to operate within the worktree.
+    - [x] Sub-task: Update the `git push` command to operate from the worktree.
+    - [x] Sub-task: Update any other relevant Git commands (e.g., `git fetch`, `git checkout`) to use the worktree.
 - [ ] Task: Refactor the rebase logic to be aware of the worktree context.
     - [ ] Sub-task: Pass the worktree path to the relevant functions.
     - [ ] Sub-task: Adjust any file path manipulations to be relative to the worktree.
