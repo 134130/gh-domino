@@ -30,4 +30,4 @@
     - [x] Sub-task: Test a successful rebase scenario.
     - [x] Sub-task: Test a rebase scenario with conflicts.
     - [x] Sub-task: Test that the user's original worktree remains untouched.
-- [ ] Task: Conductor - User Manual Verification 'Phase 3: Testing and Validation' (Protocol in workflow.md)
+- [~] Task: Conductor - User Manual Verification 'Phase 3: Testing and Validation' (Protocol in workflow.md)

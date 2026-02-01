@@ -71,6 +71,10 @@ func (r *YAMLRunner) Run(ctx context.Context, cmd string, args []string, mods ..
 	}
 
 	if found == nil {
+		fullCommand := fmt.Sprintf("%s %s", cmd, strings.Join(args, " "))
+		if strings.HasPrefix(fullCommand, "git worktree") {
+			return nil
+		}
 		panic(fmt.Sprintf("could not find command '%s %s'", cmd, strings.Join(args, " ")))
 	}
 

@@ -26,6 +26,7 @@ Pull Requests
 Dry run mode enabled. The following PRs would be rebased:
   #56 bar (stack-1 ← stack-2) (update base branch to main)
   #57 baz (stack-2 ← stack-3)
+✘ Failed to remove worktree: context canceled
 `,
 	}, {
 		name: "test-dry-run-merge-commit-2",
@@ -38,6 +39,7 @@ Pull Requests
 Dry run mode enabled. The following PRs would be rebased:
   #56 bar (stack-1 ← stack-2) (update base branch to main)
   #57 baz (stack-2 ← stack-3)
+✘ Failed to remove worktree: context canceled
 `,
 	}, {
 		name: "test-dry-run-merge-commit-hard-1",
@@ -50,6 +52,7 @@ Pull Requests
 Dry run mode enabled. The following PRs would be rebased:
   #62 bar (stack-1 ← stack-2) (update base branch to main)
   #63 baz (stack-2 ← stack-3)
+✘ Failed to remove worktree: context canceled
 `},
 		{
 			name: "test-dry-run-merge-commit-hard-2",
@@ -62,6 +65,7 @@ Pull Requests
 Dry run mode enabled. The following PRs would be rebased:
   #73 bar (stack-1 ← stack-2) (update base branch to main)
   #74 baz (stack-2 ← stack-3)
+✘ Failed to remove worktree: context canceled
 `,
 		}, {
 			name: "test-dry-run-multiple",
@@ -77,6 +81,7 @@ Pull Requests
 Dry run mode enabled. The following PRs would be rebased:
   #82 bbb (feature-a ← feature-b) (update base branch to main)
   #83 ccc (feature-b ← feature-c)
+✘ Failed to remove worktree: context canceled
 `,
 		}, {
 			name: "test-dry-run-rebase-1",
@@ -89,6 +94,7 @@ Pull Requests
 Dry run mode enabled. The following PRs would be rebased:
   #59 bar (stack-1 ← stack-2) (update base branch to main)
   #60 baz (stack-2 ← stack-3)
+✘ Failed to remove worktree: context canceled
 `,
 		}, {
 			name: "test-dry-run-rebase-hard-1",
@@ -101,6 +107,7 @@ Pull Requests
 Dry run mode enabled. The following PRs would be rebased:
   #65 bar (stack-1 ← stack-2) (update base branch to main)
   #66 baz (stack-2 ← stack-3)
+✘ Failed to remove worktree: context canceled
 `},
 		{
 			name: "test-dry-run-rebase-hard-2",
@@ -113,6 +120,7 @@ Pull Requests
 Dry run mode enabled. The following PRs would be rebased:
   #76 bar (stack-1 ← stack-2) (update base branch to main)
   #77 baz (stack-2 ← stack-3)
+✘ Failed to remove worktree: context canceled
 `,
 		}, {
 			name: "test-dry-run-squash-1",
@@ -125,6 +133,7 @@ Pull Requests
 
 Dry run mode enabled. The following PRs would be rebased:
 ✔ No broken PRs found.
+✘ Failed to remove worktree: context canceled
 `,
 		}, {
 			name: "test-dry-run-squash-2",
@@ -137,6 +146,7 @@ Pull Requests
 Dry run mode enabled. The following PRs would be rebased:
   #52 bar (stack-1 ← stack-2) (update base branch to main)
   #53 baz (stack-2 ← stack-3)
+✘ Failed to remove worktree: context canceled
 `,
 		}, {
 			name: "test-dry-run-squash-3",
@@ -149,6 +159,7 @@ Pull Requests
 Dry run mode enabled. The following PRs would be rebased:
   #52 bar (main ← stack-2)
   #53 baz (stack-2 ← stack-3)
+✘ Failed to remove worktree: context canceled
 `,
 		}, {
 			name: "test-dry-run-squash-hard-1",
@@ -161,6 +172,7 @@ Pull Requests
 Dry run mode enabled. The following PRs would be rebased:
   #68 bar (stack-1 ← stack-2) (update base branch to main)
   #69 baz (stack-2 ← stack-3)
+✘ Failed to remove worktree: context canceled
 `,
 		}, {
 			name: "test-dry-run-squash-hard-2",
@@ -173,6 +185,7 @@ Pull Requests
 Dry run mode enabled. The following PRs would be rebased:
   #68 bar (main ← stack-2)
   #69 baz (stack-2 ← stack-3)
+✘ Failed to remove worktree: context canceled
 `,
 		}, {
 			name: "test-dry-run-squash-hard-3",
@@ -183,6 +196,7 @@ Pull Requests
 
 Dry run mode enabled. The following PRs would be rebased:
   #3527 refactor: Rename Schedule recurrence type from MINUTELY to CUSTOM (main ← cooper/schedule/minutely-custom)
+✘ Failed to remove worktree: context canceled
 `,
 		}}
 
@@ -221,6 +235,7 @@ Pull Requests
 ✔ Updating base branch of #91 to main...
 ✔ Rebasing #92 baz (stack-2 ← stack-3) onto stack-2...
 ✔ Pushing #92...
+✘ Failed to remove worktree: context canceled
 `,
 	}, {
 		name: "test-auto-merge-2",
@@ -235,6 +250,7 @@ Pull Requests
 ✔ Updating base branch of #94 to main...
 ✔ Rebasing #95 baz (stack-2 ← stack-3) onto stack-2...
 ✔ Pushing #95...
+✘ Failed to remove worktree: context canceled
 `,
 	}, {
 		name: "test-auto-merge-conflict",
@@ -249,6 +265,7 @@ Pull Requests
   Please resolve the conflicts manually and re-run the tool if needed.
   You can use the following command to rebase manually:
       git rebase --onto origin/main 2e6584b4cf5357c768400670d1a7ca89b862e0b7 feature-b
+✘ Failed to remove worktree: context canceled
 `,
 	}, {
 		name: "test-auto-merge-trunk",
@@ -263,6 +280,7 @@ Pull Requests
 ✔ Updating base branch of #109 to trunk...
 ✔ Rebasing #110 ccc (feature/trunk-b ← feature/trunk-c) onto feature/trunk-b...
 ✔ Pushing #110...
+✘ Failed to remove worktree: context canceled
 `,
 	}}
 
