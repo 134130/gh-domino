@@ -12,7 +12,7 @@ import (
 	"github.com/134130/gh-domino/gitobj"
 )
 
-func ListPullRequests(ctx context.Context) ([]gitobj.PullRequest, error) {
+func ListPullRequests(ctx context.Context, mods ...CommandModifier) ([]gitobj.PullRequest, error) {
 	stdout := &bytes.Buffer{}
 	fields := []string{
 		"number", "title", "url", "author", "state", "isDraft",
@@ -21,7 +21,8 @@ func ListPullRequests(ctx context.Context) ([]gitobj.PullRequest, error) {
 	listArgs := []string{
 		"pr", "list", "--author", "@me", "--json", strings.Join(fields, ","),
 	}
-	if err := NewCommand("gh", listArgs...).Run(ctx, WithStdout(stdout)); err != nil {
+	mods = append(mods, WithStdout(stdout))
+	if err := NewCommand("gh", listArgs...).Run(ctx, mods...); err != nil {
 		return nil, err
 	}
 
@@ -39,14 +40,15 @@ func ListPullRequests(ctx context.Context) ([]gitobj.PullRequest, error) {
 
 var defaultBranchCache string
 
-func GetDefaultBranch(ctx context.Context) (string, error) {
+func GetDefaultBranch(ctx context.Context, mods ...CommandModifier) (string, error) {
 	if defaultBranchCache != "" {
 		return defaultBranchCache, nil
 	}
 
 	stdout := &bytes.Buffer{}
 	args := []string{"remote", "show", "origin"}
-	if err := NewCommand("git", args...).Run(ctx, WithStdout(stdout)); err != nil {
+	mods = append(mods, WithStdout(stdout))
+	if err := NewCommand("git", args...).Run(ctx, mods...); err != nil {
 		return "", err
 	}
 
@@ -63,10 +65,11 @@ func GetDefaultBranch(ctx context.Context) (string, error) {
 	return "", fmt.Errorf("could not determine default branch")
 }
 
-func GetBranchCommits(ctx context.Context, base, head string) ([]string, error) {
+func GetBranchCommits(ctx context.Context, base, head string, mods ...CommandModifier) ([]string, error) {
 	stdout := &bytes.Buffer{}
 	args := []string{"log", "--pretty=%H", fmt.Sprintf("%s..%s", base, head)}
-	if err := NewCommand("git", args...).Run(ctx, WithStdout(stdout)); err != nil {
+	mods = append(mods, WithStdout(stdout))
+	if err := NewCommand("git", args...).Run(ctx, mods...); err != nil {
 		return nil, err
 	}
 
@@ -80,7 +83,7 @@ func GetBranchCommits(ctx context.Context, base, head string) ([]string, error) 
 	return commits, nil
 }
 
-func Rebase(ctx context.Context, newBase, upstream, branch string) error {
+func Rebase(ctx context.Context, newBase, upstream, branch string, mods ...CommandModifier) error {
 	var gitErr *GitError
 
 	args := []string{"rebase"}
@@ -90,7 +93,7 @@ func Rebase(ctx context.Context, newBase, upstream, branch string) error {
 		args = append(args, newBase, branch)
 	}
 
-	if err := NewCommand("git", args...).Run(ctx); err != nil && errors.As(err, &gitErr) {
+	if err := NewCommand("git", args...).Run(ctx, mods...); err != nil && errors.As(err, &gitErr) {
 		if gitErr.ExitCode == 1 {
 			return ErrRebaseConflict
 		}
@@ -100,12 +103,12 @@ func Rebase(ctx context.Context, newBase, upstream, branch string) error {
 	return nil
 }
 
-func AbortRebase(ctx context.Context) error {
-	return NewCommand("git", "rebase", "--abort").Run(ctx)
+func AbortRebase(ctx context.Context, mods ...CommandModifier) error {
+	return NewCommand("git", "rebase", "--abort").Run(ctx, mods...)
 }
 
-func Push(ctx context.Context, branch string) error {
-	return NewCommand("git", "push", "--force-with-lease", "origin", branch).Run(ctx)
+func Push(ctx context.Context, branch string, mods ...CommandModifier) error {
+	return NewCommand("git", "push", "--force-with-lease", "origin", branch).Run(ctx, mods...)
 }
 
 func Fetch(ctx context.Context, remote string, mods ...CommandModifier) error {
@@ -113,9 +116,9 @@ func Fetch(ctx context.Context, remote string, mods ...CommandModifier) error {
 	return NewCommand("git", args...).Run(ctx, mods...)
 }
 
-func IsAncestor(ctx context.Context, ancestor, descendant string) (bool, error) {
+func IsAncestor(ctx context.Context, ancestor, descendant string, mods ...CommandModifier) (bool, error) {
 	args := []string{"merge-base", "--is-ancestor", ancestor, descendant}
-	err := NewCommand("git", args...).Run(ctx)
+	err := NewCommand("git", args...).Run(ctx, mods...)
 	if err == nil {
 		return true, nil
 	}
@@ -126,7 +129,7 @@ func IsAncestor(ctx context.Context, ancestor, descendant string) (bool, error) 
 	return false, err
 }
 
-func ListMergedPullRequests(ctx context.Context) ([]gitobj.PullRequest, error) {
+func ListMergedPullRequests(ctx context.Context, mods ...CommandModifier) ([]gitobj.PullRequest, error) {
 	stdout := &bytes.Buffer{}
 	fields := []string{
 		"number", "title", "url", "author", "state", "isDraft",
@@ -136,7 +139,8 @@ func ListMergedPullRequests(ctx context.Context) ([]gitobj.PullRequest, error) {
 		"pr", "list", "--author", "@me", "--state", "merged", "--limit", "30",
 		"--json", strings.Join(fields, ","),
 	}
-	if err := NewCommand("gh", listArgs...).Run(ctx, WithStdout(stdout)); err != nil {
+	mods = append(mods, WithStdout(stdout))
+	if err := NewCommand("gh", listArgs...).Run(ctx, mods...); err != nil {
 		return nil, err
 	}
 
@@ -152,24 +156,36 @@ func ListMergedPullRequests(ctx context.Context) ([]gitobj.PullRequest, error) {
 	return prs, nil
 }
 
-func GetMergeBase(ctx context.Context, branch1, branch2 string) (string, error) {
+func GetMergeBase(ctx context.Context, branch1, branch2 string, mods ...CommandModifier) (string, error) {
 	stdout := &bytes.Buffer{}
 	args := []string{"merge-base", branch1, branch2}
-	if err := NewCommand("git", args...).Run(ctx, WithStdout(stdout)); err != nil {
+	mods = append(mods, WithStdout(stdout))
+	if err := NewCommand("git", args...).Run(ctx, mods...); err != nil {
 		return "", err
 	}
 	return strings.TrimSpace(stdout.String()), nil
 }
 
-func UpdateBaseBranch(ctx context.Context, prNumber int, newBase string) error {
+func UpdateBaseBranch(ctx context.Context, prNumber int, newBase string, mods ...CommandModifier) error {
 	args := []string{"pr", "edit", fmt.Sprint(prNumber), "--base", newBase}
-	return NewCommand("gh", args...).Run(ctx)
+	return NewCommand("gh", args...).Run(ctx, mods...)
 }
 
-func RevParse(ctx context.Context, ref string) (string, error) {
+func RevParse(ctx context.Context, ref string, mods ...CommandModifier) (string, error) {
 	stdout := &bytes.Buffer{}
 	args := []string{"rev-parse", ref}
-	if err := NewCommand("git", args...).Run(ctx, WithStdout(stdout)); err != nil {
+	mods = append(mods, WithStdout(stdout))
+	if err := NewCommand("git", args...).Run(ctx, mods...); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(stdout.String()), nil
+}
+
+func GetCurrentBranch(ctx context.Context, mods ...CommandModifier) (string, error) {
+	stdout := &bytes.Buffer{}
+	args := []string{"rev-parse", "--abbrev-ref", "HEAD"}
+	mods = append(mods, WithStdout(stdout))
+	if err := NewCommand("git", args...).Run(ctx, mods...); err != nil {
 		return "", err
 	}
 	return strings.TrimSpace(stdout.String()), nil

@@ -8,11 +8,12 @@ import (
 )
 
 type Config struct {
-	Auto     bool
-	DryRun   bool
-	DumpTo   string
-	Headless bool
-	Writer   io.Writer
+	Auto         bool
+	DryRun       bool
+	Headless     bool
+	DumpTo       string
+	Writer       io.Writer
+	WorktreePath string
 }
 
 func ParseConfig() (Config, error) {

@@ -41,6 +41,24 @@ func Run(ctx context.Context, cfg Config) error {
 		}
 	}
 
+	var worktreeMods []git.CommandModifier
+	if cfg.WorktreePath != "" {
+		currentBranch, err := git.GetCurrentBranch(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get current branch: %w", err)
+		}
+
+		if err := git.CreateWorktree(ctx, ".", cfg.WorktreePath, currentBranch); err != nil {
+			return fmt.Errorf("failed to create worktree: %w", err)
+		}
+		defer func() {
+			if err := git.RemoveWorktree(ctx, ".", cfg.WorktreePath); err != nil {
+				failure(fmt.Sprintf("Failed to remove worktree: %v", err))
+			}
+		}()
+		worktreeMods = append(worktreeMods, git.WithWorkingDir(cfg.WorktreePath))
+	}
+
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -66,18 +84,19 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 
 	_, _ = io.WriteString(gitCmdWriter, "git fetch origin")
-	if err := git.Fetch(ctx, "origin", git.WithStdout(gitCmdWriter)); err != nil {
+	fetchMods := append(worktreeMods, git.WithStdout(gitCmdWriter))
+	if err := git.Fetch(ctx, "origin", fetchMods...); err != nil {
 		return fmt.Errorf("failed to fetch origin: %s", err)
 	}
 
 	_, _ = io.WriteString(gitCmdWriter, "gh pr list --author @me")
-	prs, err := git.ListPullRequests(ctx)
+	prs, err := git.ListPullRequests(ctx, worktreeMods...)
 	if err != nil {
 		return fmt.Errorf("failed to list pull requests: %s", err)
 	}
 
 	_, _ = io.WriteString(gitCmdWriter, "gh pr list --author @me --state merged --search sort:updated")
-	mergedPRs, err := git.ListMergedPullRequests(ctx)
+	mergedPRs, err := git.ListMergedPullRequests(ctx, worktreeMods...)
 	if err != nil {
 		return fmt.Errorf("failed to list merged pull requests: %s", err)
 	}
@@ -85,7 +104,7 @@ func Run(ctx context.Context, cfg Config) error {
 	prHeadShas := make(map[string]string)
 	for _, pr := range prs {
 		_, _ = fmt.Fprintf(gitCmdWriter, "git rev-parse origin/%s", pr.HeadRefName)
-		sha, err := git.RevParse(ctx, "origin/"+pr.HeadRefName)
+		sha, err := git.RevParse(ctx, "origin/"+pr.HeadRefName, worktreeMods...)
 		if err != nil {
 			write("Could not get SHA for %s: %v\n", pr.HeadRefName, err)
 			return fmt.Errorf("could not get SHA for %s: %w", pr.HeadRefName, err)
@@ -93,7 +112,7 @@ func Run(ctx context.Context, cfg Config) error {
 		prHeadShas[pr.HeadRefName] = sha
 	}
 
-	roots, err := stackedpr.BuildDependencyTree(ctx, prs, mergedPRs, prHeadShas)
+	roots, err := stackedpr.BuildDependencyTree(ctx, prs, mergedPRs, prHeadShas, worktreeMods...)
 	if err != nil {
 		return err
 	}
@@ -121,7 +140,7 @@ func Run(ctx context.Context, cfg Config) error {
 
 	totalProcessed := 0
 	for _, root := range roots {
-		processed, err := processDependencyTree(ctx, root, prMap, mergedPRsByHeadRef, prHeadShas, cfg, mergedPRs, processedPRs)
+		processed, err := processDependencyTree(ctx, root, prMap, mergedPRsByHeadRef, prHeadShas, cfg, mergedPRs, processedPRs, worktreeMods...)
 		if err != nil {
 			var errRebaseConflict *ErrRebaseConflict
 			if errors.As(err, &errRebaseConflict) {
@@ -154,6 +173,7 @@ func processDependencyTree(
 	cfg Config,
 	mergedPRs []gitobj.PullRequest,
 	processedPRs map[int]bool,
+	mods ...git.CommandModifier,
 ) (int, error) {
 	if node == nil {
 		return 0, nil
@@ -168,7 +188,7 @@ func processDependencyTree(
 
 	totalProcessed := 0
 
-	isBroken, newBase, upstream, err := determinePRState(ctx, pr, node.OriginalBase, prMap, mergedPRsByHeadRef, prHeadShas, cfg, mergedPRs)
+	isBroken, newBase, upstream, err := determinePRState(ctx, pr, node.OriginalBase, prMap, mergedPRsByHeadRef, prHeadShas, cfg, mergedPRs, mods...)
 	if err != nil {
 		write("Error determining state for PR %s: %v\n", pr.PRNumberString(), err)
 		// Continue to children even if parent has an error
@@ -177,14 +197,14 @@ func processDependencyTree(
 			newBase = pr.BaseRefName
 		}
 		brokenPR := stackedpr.RebaseInfo{PR: pr, NewBase: newBase, Upstream: upstream}
-		if err := handleBrokenPR(ctx, brokenPR, cfg, prHeadShas); err != nil {
+		if err := handleBrokenPR(ctx, brokenPR, cfg, prHeadShas, mods...); err != nil {
 			return totalProcessed, err
 		}
 		totalProcessed++
 	}
 
 	for _, child := range node.Children {
-		processed, err := processDependencyTree(ctx, child, prMap, mergedPRsByHeadRef, prHeadShas, cfg, mergedPRs, processedPRs)
+		processed, err := processDependencyTree(ctx, child, prMap, mergedPRsByHeadRef, prHeadShas, cfg, mergedPRs, processedPRs, mods...)
 		if err != nil {
 			return totalProcessed, err
 		}
@@ -208,12 +228,13 @@ func determinePRState(
 	prHeadShas map[string]string,
 	cfg Config,
 	mergedPRs []gitobj.PullRequest,
+	mods ...git.CommandModifier,
 ) (isBroken bool, newBase string, upstream string, err error) {
 	if originalBase != nil {
 		if originalBase.MergeCommit.Sha != "" && len(originalBase.Commits) > 0 {
 			isSquash := true
 			for _, commit := range originalBase.Commits {
-				isAncestor, err := git.IsAncestor(ctx, commit.Oid, originalBase.MergeCommit.Sha)
+				isAncestor, err := git.IsAncestor(ctx, commit.Oid, originalBase.MergeCommit.Sha, mods...)
 				if err != nil {
 					return false, "", "", fmt.Errorf("failed to check ancestry for commit %s: %v", commit.Oid, err)
 				}
@@ -239,7 +260,7 @@ func determinePRState(
 			if mergedBasePR.MergeCommit.Sha != "" && len(mergedBasePR.Commits) > 0 {
 				isSquash := true
 				for _, commit := range mergedBasePR.Commits {
-					isAncestor, err := git.IsAncestor(ctx, commit.Oid, mergedBasePR.MergeCommit.Sha)
+					isAncestor, err := git.IsAncestor(ctx, commit.Oid, mergedBasePR.MergeCommit.Sha, mods...)
 					if err != nil {
 						return false, "", "", fmt.Errorf("failed to check ancestry for commit %s: %v", commit.Oid, err)
 					}
@@ -263,12 +284,12 @@ func determinePRState(
 	// This can happen if the base branch itself was updated (e.g., parent PR rebased).
 	isDiverged := false
 	if _, ok := prMap[pr.BaseRefName]; ok { // Only check divergence for stacked PRs
-		baseShaOnOrigin, err := git.RevParse(ctx, "origin/"+pr.BaseRefName)
+		baseShaOnOrigin, err := git.RevParse(ctx, "origin/"+pr.BaseRefName, mods...)
 		if err != nil {
 			return false, "", "", fmt.Errorf("could not get SHA for base %s: %v", pr.BaseRefName, err)
 		}
 		headSha := prHeadShas[pr.HeadRefName]
-		mergeBase, err := git.GetMergeBase(ctx, "origin/"+pr.BaseRefName, headSha)
+		mergeBase, err := git.GetMergeBase(ctx, "origin/"+pr.BaseRefName, headSha, mods...)
 		if err != nil {
 			return false, "", "", fmt.Errorf("could not get merge base for %s and %s: %v", pr.BaseRefName, pr.HeadRefName, err)
 		}
@@ -294,13 +315,13 @@ func determinePRState(
 
 	// --- Check 4: Does this root PR contain commits from another merged PR? ---
 	// This handles cases where a PR was based on another branch that got merged while this PR was open.
-	defaultBranch, err := git.GetDefaultBranch(ctx)
+	defaultBranch, err := git.GetDefaultBranch(ctx, mods...)
 	if err != nil {
 		return false, "", "", fmt.Errorf("could not get default branch: %v", err)
 	}
 	if pr.BaseRefName == defaultBranch {
 		headSha := prHeadShas[pr.HeadRefName]
-		mergeBase, err := git.GetMergeBase(ctx, "origin/"+defaultBranch, headSha)
+		mergeBase, err := git.GetMergeBase(ctx, "origin/"+defaultBranch, headSha, mods...)
 		if err != nil {
 			return false, "", "", fmt.Errorf("could not get merge base for %s: %v", pr.HeadRefName, err)
 		}
@@ -325,6 +346,7 @@ func handleBrokenPR(
 	brokenPR stackedpr.RebaseInfo,
 	cfg Config,
 	prHeadShas map[string]string,
+	mods ...git.CommandModifier,
 ) error {
 	if cfg.DryRun {
 		updateBaseBranchString := ""
@@ -357,11 +379,11 @@ func handleBrokenPR(
 
 	msg := fmt.Sprintf("Rebasing %s onto %s...", brokenPR.PR.String(), color.Cyan(brokenPR.NewBase))
 	if err := spinner.New(msg, cfg.Writer).Run(func() error {
-		return git.Rebase(ctx, fmt.Sprintf("origin/%s", brokenPR.NewBase), brokenPR.Upstream, brokenPR.PR.HeadRefName)
+		return git.Rebase(ctx, fmt.Sprintf("origin/%s", brokenPR.NewBase), brokenPR.Upstream, brokenPR.PR.HeadRefName, mods...)
 	}); err != nil {
 		if errors.Is(err, git.ErrRebaseConflict) {
 			// Attempt to abort the rebase if there was a conflict.
-			if err := git.AbortRebase(ctx); err != nil {
+			if err := git.AbortRebase(ctx, mods...); err != nil {
 				return fmt.Errorf("rebase conflict occurred and failed to abort rebase: %v", err)
 			}
 			return &ErrRebaseConflict{BrokenPR: brokenPR}
@@ -384,13 +406,13 @@ func handleBrokenPR(
 
 	msg = fmt.Sprintf("Pushing %s...", brokenPR.PR.PRNumberString())
 	if err := spinner.New(msg, cfg.Writer).Run(func() error {
-		return git.Push(ctx, brokenPR.PR.HeadRefName)
+		return git.Push(ctx, brokenPR.PR.HeadRefName, mods...)
 	}); err != nil {
 		return fmt.Errorf("failed to push branch %s: %v", brokenPR.PR.HeadRefName, err)
 	}
 	success(msg)
 
-	newSha, err := git.RevParse(ctx, "origin/"+brokenPR.PR.HeadRefName)
+	newSha, err := git.RevParse(ctx, "origin/"+brokenPR.PR.HeadRefName, mods...)
 	if err != nil {
 		return fmt.Errorf("could not get new SHA for %s: %v", brokenPR.PR.HeadRefName, err)
 	}
@@ -414,7 +436,7 @@ func handleBrokenPR(
 		msg = fmt.Sprintf("Updating base branch of %s to %s...", brokenPR.PR.PRNumberString(), color.Cyan(brokenPR.NewBase))
 
 		if err = spinner.New(msg, cfg.Writer).Run(func() error {
-			return git.UpdateBaseBranch(ctx, brokenPR.PR.Number, brokenPR.NewBase)
+			return git.UpdateBaseBranch(ctx, brokenPR.PR.Number, brokenPR.NewBase, mods...)
 		}); err != nil {
 			return fmt.Errorf("failed to update base branch for PR %s: %v", brokenPR.PR.PRNumberString(), err)
 		}

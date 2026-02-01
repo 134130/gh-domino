@@ -14,7 +14,7 @@ type Node struct {
 	OriginalBase *gitobj.PullRequest
 }
 
-func BuildDependencyTree(ctx context.Context, prs []gitobj.PullRequest, mergedPRs []gitobj.PullRequest, prHeadShas map[string]string) ([]*Node, error) {
+func BuildDependencyTree(ctx context.Context, prs []gitobj.PullRequest, mergedPRs []gitobj.PullRequest, prHeadShas map[string]string, mods ...git.CommandModifier) ([]*Node, error) {
 	prMap := make(map[string]*Node)                           // HeadRefName -> Node
 	isChild := make(map[string]bool)                          // HeadRefName -> isChild
 	mergedPRsByHeadRef := make(map[string]gitobj.PullRequest) // HeadRefName -> Merged PR
@@ -62,7 +62,7 @@ func BuildDependencyTree(ctx context.Context, prs []gitobj.PullRequest, mergedPR
 			continue
 		}
 
-		defaultBranch, err := git.GetDefaultBranch(ctx)
+		defaultBranch, err := git.GetDefaultBranch(ctx, mods...)
 		if err != nil {
 			return nil, fmt.Errorf("could not get default branch: %w", err)
 		}
@@ -82,7 +82,7 @@ func BuildDependencyTree(ctx context.Context, prs []gitobj.PullRequest, mergedPR
 			}
 			ancestorCommit := mergedPR.Commits[0].Oid
 
-			isAncestor, err := git.IsAncestor(ctx, ancestorCommit, prHeadShas[node.Value.HeadRefName])
+			isAncestor, err := git.IsAncestor(ctx, ancestorCommit, prHeadShas[node.Value.HeadRefName], mods...)
 			if err == nil && isAncestor {
 				node.OriginalBase = &mergedPRs[i]
 				break
