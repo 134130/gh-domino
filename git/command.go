@@ -133,6 +133,12 @@ func WithStdin(stdin io.Reader) CommandModifier {
 	}
 }
 
+func WithWorkingDir(dir string) CommandModifier {
+	return func(c *exec.Cmd) {
+		c.Dir = dir
+	}
+}
+
 func path(cmd string) (string, error) {
 	switch cmd {
 	case "git":
