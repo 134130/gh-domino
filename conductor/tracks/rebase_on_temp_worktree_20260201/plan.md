@@ -5,7 +5,7 @@
 - [x] Task: Create a new module or utility for managing temporary Git worktrees. [6555caf]
     - [ ] Sub-task: Implement a function to create a new worktree at a temporary path.
     - [ ] Sub-task: Implement a function to remove the worktree.
-- [ ] Task: Integrate worktree creation and cleanup into the main `gh domino` command flow.
+- [x] Task: Integrate worktree creation and cleanup into the main `gh domino` command flow. [4c315ce]
     - [ ] Sub-task: Ensure the worktree is always created before the rebase process begins.
     - [ ] Sub-task: Ensure the worktree is always removed after the rebase process completes, whether it succeeds or fails.
 - [ ] Task: Conductor - User Manual Verification 'Phase 1: Implement Temporary Worktree Management' (Protocol in workflow.md)
