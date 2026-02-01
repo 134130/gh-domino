@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -42,8 +43,21 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 
 	var worktreeMods []git.CommandModifier
+	if cfg.WorktreePath == "" {
+		tempWorktreePath, err := os.MkdirTemp("", "gh-domino-worktree-")
+		if err != nil {
+			return fmt.Errorf("failed to create temporary worktree directory: %w", err)
+		}
+		cfg.WorktreePath = tempWorktreePath
+		defer func() {
+			if err := os.RemoveAll(tempWorktreePath); err != nil {
+				failure(fmt.Sprintf("Failed to remove temporary worktree directory: %v", err))
+			}
+		}()
+	}
+
 	if cfg.WorktreePath != "" {
-		currentBranch, err := git.GetCurrentBranch(ctx)
+		currentBranch, err := git.GetCurrentBranch(ctx, git.WithWorkingDir("."))
 		if err != nil {
 			return fmt.Errorf("failed to get current branch: %w", err)
 		}
