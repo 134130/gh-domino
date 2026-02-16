@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/134130/gh-domino/git"
 	"github.com/134130/gh-domino/gitobj"
@@ -52,7 +54,7 @@ func Run(ctx context.Context, cfg Config) error {
 	go func() {
 		if _, err := p.Run(); err != nil {
 			cancel()
-			failure(fmt.Sprintf("Failed to start UI: %v", err))
+			failure(fmt.Sprintf("start UI: %v", err))
 		}
 	}()
 
@@ -60,6 +62,34 @@ func Run(ctx context.Context, cfg Config) error {
 		p.Quit()
 		p.Wait()
 	}()
+
+	if cfg.TempDir {
+		m.SetCurrentContext("Setting up temporary directory...")
+
+		url, err := git.GetGitURL(ctx, m.CommandModifier(true))
+		if err != nil {
+			return fmt.Errorf("get git URL: %w", err)
+		}
+
+		tempDir := fmt.Sprintf("/tmp/gh-domino/%s", strings.ReplaceAll(url, "/", "-"))
+		err = os.MkdirAll(tempDir, 0755)
+		if err != nil {
+			return fmt.Errorf("create temp dir: %w", err)
+		}
+
+		if err := git.Clone(ctx, url, tempDir, m.CommandModifier(true)); err != nil {
+			if !strings.Contains(err.Error(), "already exists and is not an empty directory") {
+				return fmt.Errorf("clone repository: %w", err)
+			}
+		}
+
+		// Change working directory to the cloned repo
+		if err := os.Chdir(tempDir); err != nil {
+			return fmt.Errorf("change directory to temp dir: %w", err)
+		}
+
+		m.Success("Setting up temporary directory...")
+	}
 
 	m.SetCurrentContext("Fetching pull requests...")
 
@@ -370,7 +400,6 @@ func handleBrokenPR(
 
 	// --- Push ---
 	if !cfg.Auto {
-		write("Rebase completed successfully.\n")
 		response, err := util.AskForConfirmation("Continue to push the rebased branch and update the PR?")
 		if err != nil {
 			return fmt.Errorf("error reading input: %s", err)

@@ -12,6 +12,21 @@ import (
 	"github.com/134130/gh-domino/gitobj"
 )
 
+func GetGitURL(ctx context.Context, mods ...CommandModifier) (string, error) {
+	stdout := &bytes.Buffer{}
+	args := []string{"remote", "get-url", "origin"}
+	mods = append(mods, WithStdout(stdout))
+	if err := NewCommand("git", args...).Run(ctx, mods...); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(stdout.String()), nil
+}
+
+func Clone(ctx context.Context, repoURL, targetDir string, mods ...CommandModifier) error {
+	args := []string{"clone", repoURL, targetDir}
+	return NewCommand("git", args...).Run(ctx, mods...)
+}
+
 func ListPullRequests(ctx context.Context, mods ...CommandModifier) ([]gitobj.PullRequest, error) {
 	stdout := &bytes.Buffer{}
 	fields := []string{
