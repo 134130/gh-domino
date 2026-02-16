@@ -30,3 +30,6 @@ go mod tidy
 golangci-lint run --fix ./...
 go test ./...
 """
+
+[tasks.test]
+run = 'go test ./...'
