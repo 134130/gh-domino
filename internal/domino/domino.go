@@ -4,18 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
-
-	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/134130/gh-domino/git"
 	"github.com/134130/gh-domino/gitobj"
 	"github.com/134130/gh-domino/internal/color"
-	"github.com/134130/gh-domino/internal/ui"
-
 	"github.com/134130/gh-domino/internal/spinner"
 	"github.com/134130/gh-domino/internal/stackedpr"
+	"github.com/134130/gh-domino/internal/ui"
 	"github.com/134130/gh-domino/internal/util"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 var write = func(msg string, args ...interface{}) {}
@@ -44,48 +41,45 @@ func Run(ctx context.Context, cfg Config) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	var gitCmdWriter io.Writer
+	m := ui.NewModel(ctx, cancel)
+
+	opts := []tea.ProgramOption{tea.WithOutput(cfg.Writer)}
 	if cfg.Headless {
-		gitCmdWriter = io.Discard
-	} else {
-		m := ui.NewModel(ctx, cancel)
-		p := tea.NewProgram(m, tea.WithOutput(cfg.Writer))
+		opts = append(opts, tea.WithoutRenderer())
+	}
+	p := tea.NewProgram(m, opts...)
 
-		go func() {
-			if _, err := p.Run(); err != nil {
-				cancel()
-				failure(fmt.Sprintf("Failed to start UI: %v", err))
-			}
-		}()
+	go func() {
+		if _, err := p.Run(); err != nil {
+			cancel()
+			failure(fmt.Sprintf("Failed to start UI: %v", err))
+		}
+	}()
 
-		defer func() {
-			p.Send(ui.DoneMsg{})
-			p.Wait()
-		}()
-		gitCmdWriter = ui.NewLogWriter(m, p)
+	defer func() {
+		p.Quit()
+		p.Wait()
+	}()
+
+	m.SetCurrentContext("Fetching pull requests...")
+
+	if err := git.Fetch(ctx, "origin", m.CommandModifier(true)); err != nil {
+		return fmt.Errorf("fetch origin: %s", err)
 	}
 
-	_, _ = io.WriteString(gitCmdWriter, "git fetch origin")
-	if err := git.Fetch(ctx, "origin", git.WithStdout(gitCmdWriter)); err != nil {
-		return fmt.Errorf("failed to fetch origin: %s", err)
-	}
-
-	_, _ = io.WriteString(gitCmdWriter, "gh pr list --author @me")
-	prs, err := git.ListPullRequests(ctx)
+	prs, err := git.ListPullRequests(ctx, m.CommandModifier(false))
 	if err != nil {
-		return fmt.Errorf("failed to list pull requests: %s", err)
+		return fmt.Errorf("list pull requests: %s", err)
 	}
 
-	_, _ = io.WriteString(gitCmdWriter, "gh pr list --author @me --state merged --search sort:updated")
-	mergedPRs, err := git.ListMergedPullRequests(ctx)
+	mergedPRs, err := git.ListMergedPullRequests(ctx, m.CommandModifier(false))
 	if err != nil {
-		return fmt.Errorf("failed to list merged pull requests: %s", err)
+		return fmt.Errorf("list merged pull requests: %s", err)
 	}
 
 	prHeadShas := make(map[string]string)
 	for _, pr := range prs {
-		_, _ = fmt.Fprintf(gitCmdWriter, "git rev-parse origin/%s", pr.HeadRefName)
-		sha, err := git.RevParse(ctx, "origin/"+pr.HeadRefName)
+		sha, err := git.RevParse(ctx, "origin/"+pr.HeadRefName, m.CommandModifier(true))
 		if err != nil {
 			write("Could not get SHA for %s: %v\n", pr.HeadRefName, err)
 			return fmt.Errorf("could not get SHA for %s: %w", pr.HeadRefName, err)
@@ -93,14 +87,18 @@ func Run(ctx context.Context, cfg Config) error {
 		prHeadShas[pr.HeadRefName] = sha
 	}
 
-	roots, err := stackedpr.BuildDependencyTree(ctx, prs, mergedPRs, prHeadShas)
+	m.Success("Fetching pull requests...")
+
+	m.SetCurrentContext("Building dependency tree...")
+	roots, err := stackedpr.BuildDependencyTree(ctx, prs, mergedPRs, prHeadShas, m.CommandModifier(false))
 	if err != nil {
 		return err
 	}
+	m.Success("Building dependency tree...")
 
-	success("Fetching pull requests...")
+	p.Quit()
+	p.Wait()
 
-	write("\n")
 	write(stackedpr.RenderDependencyTree(roots))
 	write("\n\n")
 
@@ -215,7 +213,7 @@ func determinePRState(
 			for _, commit := range originalBase.Commits {
 				isAncestor, err := git.IsAncestor(ctx, commit.Oid, originalBase.MergeCommit.Sha)
 				if err != nil {
-					return false, "", "", fmt.Errorf("failed to check ancestry for commit %s: %v", commit.Oid, err)
+					return false, "", "", fmt.Errorf("check ancestry for commit %s: %v", commit.Oid, err)
 				}
 				if isAncestor {
 					isSquash = false
