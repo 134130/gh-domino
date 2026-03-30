@@ -12,6 +12,7 @@ import (
 	"github.com/134130/gh-domino/internal/color"
 	"github.com/134130/gh-domino/internal/spinner"
 	"github.com/134130/gh-domino/internal/stackedpr"
+	"github.com/134130/gh-domino/internal/tui"
 	"github.com/134130/gh-domino/internal/ui"
 	"github.com/134130/gh-domino/internal/util"
 	tea "github.com/charmbracelet/bubbletea"
@@ -42,6 +43,11 @@ func Run(ctx context.Context, cfg Config) error {
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+
+	// v2: interactive TUI mode (default when no --auto, --headless, --dry-run)
+	if !cfg.Auto && !cfg.Headless && !cfg.DryRun {
+		return runInteractive(ctx, cancel, cfg)
+	}
 
 	m := ui.NewModel(ctx, cancel)
 
@@ -205,7 +211,7 @@ func processDependencyTree(
 			newBase = pr.BaseRefName
 		}
 		brokenPR := stackedpr.RebaseInfo{PR: pr, NewBase: newBase, Upstream: upstream}
-		if err := handleBrokenPR(ctx, brokenPR, cfg, prHeadShas); err != nil {
+		if err := HandleBrokenPR(ctx, brokenPR, cfg, prHeadShas); err != nil {
 			return totalProcessed, err
 		}
 		totalProcessed++
@@ -346,9 +352,9 @@ func determinePRState(
 	return false, "", "", nil
 }
 
-// handleBrokenPR performs the necessary actions on a broken PR, such as rebasing,
+// HandleBrokenPR performs the necessary actions on a broken PR, such as rebasing,
 // pushing, and updating the base branch on the remote. It handles both dry-run and real modes.
-func handleBrokenPR(
+func HandleBrokenPR(
 	ctx context.Context,
 	brokenPR stackedpr.RebaseInfo,
 	cfg Config,
@@ -446,6 +452,109 @@ func handleBrokenPR(
 			return fmt.Errorf("failed to update base branch for PR %s: %v", brokenPR.PR.PRNumberString(), err)
 		}
 		success(msg)
+	}
+	return nil
+}
+
+// runInteractive runs the v2 interactive TUI selection flow.
+// Phase 1: bubbletea TUI for loading + PR selection (alt screen).
+// Phase 2: rebase selected PRs using existing HandleBrokenPR logic (Auto=true).
+func runInteractive(ctx context.Context, cancel context.CancelFunc, cfg Config) error {
+	loadFn := func(ctx context.Context) (*tui.LoadResult, error) {
+		if err := git.Fetch(ctx, "origin"); err != nil {
+			return nil, fmt.Errorf("fetch origin: %w", err)
+		}
+
+		prs, err := git.ListPullRequests(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("list pull requests: %w", err)
+		}
+
+		mergedPRs, err := git.ListMergedPullRequests(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("list merged pull requests: %w", err)
+		}
+
+		prHeadShas := make(map[string]string)
+		for _, pr := range prs {
+			sha, err := git.RevParse(ctx, "origin/"+pr.HeadRefName)
+			if err != nil {
+				return nil, fmt.Errorf("could not get SHA for %s: %w", pr.HeadRefName, err)
+			}
+			prHeadShas[pr.HeadRefName] = sha
+		}
+
+		roots, err := stackedpr.BuildDependencyTree(ctx, prs, mergedPRs, prHeadShas)
+		if err != nil {
+			return nil, err
+		}
+
+		// Build lookup maps for determinePRState
+		prMap := make(map[string]gitobj.PullRequest)
+		for _, pr := range prs {
+			prMap[pr.HeadRefName] = pr
+		}
+		mergedByHead := make(map[string]gitobj.PullRequest)
+		for _, pr := range mergedPRs {
+			mergedByHead[pr.HeadRefName] = pr
+		}
+
+		// Pre-compute broken status for every PR in the tree
+		statuses := make(map[int]tui.PRStatus)
+		var walkStatuses func(node *stackedpr.Node)
+		walkStatuses = func(node *stackedpr.Node) {
+			isBroken, newBase, upstream, err := determinePRState(
+				ctx, node.Value, node.OriginalBase,
+				prMap, mergedByHead, prHeadShas,
+				Config{DryRun: false}, mergedPRs,
+			)
+			if err == nil {
+				statuses[node.Value.Number] = tui.PRStatus{
+					Broken:   isBroken,
+					NewBase:  newBase,
+					Upstream: upstream,
+				}
+			}
+			for _, child := range node.Children {
+				walkStatuses(child)
+			}
+		}
+		for _, root := range roots {
+			walkStatuses(root)
+		}
+
+		return &tui.LoadResult{
+			Roots:      roots,
+			Statuses:   statuses,
+			PrHeadShas: prHeadShas,
+		}, nil
+	}
+
+	result, err := tui.RunSelector(ctx, cancel, loadFn)
+	if err != nil {
+		return err
+	}
+	if result == nil || len(result.RebaseQueue) == 0 {
+		success("No PRs selected for rebase.")
+		return nil
+	}
+
+	// Rebase selected PRs with Auto=true (user already confirmed via TUI)
+	autoCfg := cfg
+	autoCfg.Auto = true
+	for _, info := range result.RebaseQueue {
+		if err := HandleBrokenPR(ctx, info, autoCfg, result.PrHeadShas); err != nil {
+			var conflictErr *ErrRebaseConflict
+			if errors.As(err, &conflictErr) {
+				failure(fmt.Sprintf(`Failed to handle broken PR %s due to rebase conflicts.
+  Please resolve the conflicts manually and re-run the tool if needed.
+  You can use the following command to rebase manually:
+      %s`, conflictErr.BrokenPR.PR.PRNumberString(), conflictErr.Command()))
+			} else {
+				failure(err.Error())
+			}
+			return nil
+		}
 	}
 	return nil
 }
