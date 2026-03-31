@@ -5,7 +5,7 @@ goreleaser = "latest"
 
 [tasks.release]
 description = "Release a new version. Usage: mise run release -- v1.0.0"
-run = """
+run = '''
 #!/usr/bin/env bash
 set -eou pipefail
 
@@ -21,13 +21,19 @@ if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   exit 1
 fi
 
+if [ -n "$(git status --porcelain)" ]; then
+  echo "Error: working directory is dirty. Commit or stash changes before releasing."
+  git status --short
+  exit 1
+fi
+
 export GITHUB_TOKEN=$(gh auth token)
 
 git tag "$VERSION"
 git push origin "$VERSION"
 
 goreleaser release --clean
-"""
+'''
 
 [tasks.lint]
 run = """
