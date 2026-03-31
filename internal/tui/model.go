@@ -30,8 +30,9 @@ type LoadFunc func(ctx context.Context) (*LoadResult, error)
 
 // SelectorResult is returned from RunSelector after the user confirms.
 type SelectorResult struct {
-	RebaseQueue []stackedpr.RebaseInfo
-	PrHeadShas  map[string]string
+	RebaseQueue      []stackedpr.RebaseInfo // broken PRs → local git rebase
+	UpdateBranchNums []int                  // non-broken PRs → gh pr update-branch --rebase
+	PrHeadShas       map[string]string
 }
 
 // FlatNode is one row in the DFS-flattened tree, used for cursor navigation.
@@ -70,7 +71,8 @@ type Model struct {
 	selected   map[int]bool
 
 	// set when Enter is pressed, returned to caller
-	rebaseQueue []stackedpr.RebaseInfo
+	rebaseQueue      []stackedpr.RebaseInfo
+	updateBranchNums []int
 
 	width  int
 	height int
@@ -120,8 +122,9 @@ func RunSelector(ctx context.Context, cancel context.CancelFunc, loadFn LoadFunc
 		return nil, tuiModel.loadErr
 	}
 	return &SelectorResult{
-		RebaseQueue: tuiModel.rebaseQueue,
-		PrHeadShas:  tuiModel.prHeadShas,
+		RebaseQueue:      tuiModel.rebaseQueue,
+		UpdateBranchNums: tuiModel.updateBranchNums,
+		PrHeadShas:       tuiModel.prHeadShas,
 	}, nil
 }
 
@@ -218,7 +221,7 @@ func (m Model) updateSelecting(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case key.Matches(msg, m.keys.Confirm):
-		m.rebaseQueue = m.buildRebaseQueue()
+		m.rebaseQueue, m.updateBranchNums = m.buildQueues()
 		return m, tea.Quit
 	}
 
@@ -346,22 +349,25 @@ func (m Model) renderStatusBar() string {
 	return statusBarStyle.Render(bar)
 }
 
-func (m Model) buildRebaseQueue() []stackedpr.RebaseInfo {
-	var queue []stackedpr.RebaseInfo
+func (m Model) buildQueues() (rebase []stackedpr.RebaseInfo, update []int) {
 	var walk func(node *stackedpr.Node)
 	walk = func(node *stackedpr.Node) {
 		pr := node.Value
-		status := m.statuses[pr.Number]
-		if m.selected[pr.Number] && status.Broken {
-			newBase := status.NewBase
-			if newBase == "" {
-				newBase = pr.BaseRefName
+		if m.selected[pr.Number] {
+			status := m.statuses[pr.Number]
+			if status.Broken {
+				newBase := status.NewBase
+				if newBase == "" {
+					newBase = pr.BaseRefName
+				}
+				rebase = append(rebase, stackedpr.RebaseInfo{
+					PR:       pr,
+					NewBase:  newBase,
+					Upstream: status.Upstream,
+				})
+			} else {
+				update = append(update, pr.Number)
 			}
-			queue = append(queue, stackedpr.RebaseInfo{
-				PR:       pr,
-				NewBase:  newBase,
-				Upstream: status.Upstream,
-			})
 		}
 		for _, child := range node.Children {
 			walk(child)
@@ -370,7 +376,7 @@ func (m Model) buildRebaseQueue() []stackedpr.RebaseInfo {
 	for _, root := range m.roots {
 		walk(root)
 	}
-	return queue
+	return
 }
 
 // flattenTree converts the dependency tree into a DFS-ordered flat list

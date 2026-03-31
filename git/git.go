@@ -201,3 +201,10 @@ func ShortSha(sha string) string {
 	}
 	return sha
 }
+
+// UpdateBranch rebases the PR branch onto the latest base branch via GitHub API.
+// Equivalent to clicking "Update branch" with rebase on the GitHub PR page.
+func UpdateBranch(ctx context.Context, prNumber int, mods ...CommandModifier) error {
+	args := []string{"pr", "update-branch", "--rebase", fmt.Sprint(prNumber)}
+	return NewCommand("gh", args...).Run(ctx, mods...)
+}

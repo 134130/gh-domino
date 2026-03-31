@@ -215,6 +215,19 @@ func processDependencyTree(
 			return totalProcessed, err
 		}
 		totalProcessed++
+	} else if cfg.RebaseAll {
+		if cfg.DryRun {
+			write("  %s (update-branch)\n", pr.String())
+		} else {
+			msg := fmt.Sprintf("Updating branch of %s...", pr.PRNumberString())
+			if err := spinner.New(msg, cfg.Writer).Run(func() error {
+				return git.UpdateBranch(ctx, pr.Number)
+			}); err != nil {
+				return totalProcessed, fmt.Errorf("failed to update branch for %s: %w", pr.PRNumberString(), err)
+			}
+			success(msg)
+		}
+		totalProcessed++
 	}
 
 	for _, child := range node.Children {
@@ -534,12 +547,12 @@ func runInteractive(ctx context.Context, cancel context.CancelFunc, cfg Config) 
 	if err != nil {
 		return err
 	}
-	if result == nil || len(result.RebaseQueue) == 0 {
+	if result == nil || (len(result.RebaseQueue) == 0 && len(result.UpdateBranchNums) == 0) {
 		success("No PRs selected for rebase.")
 		return nil
 	}
 
-	// Rebase selected PRs with Auto=true (user already confirmed via TUI)
+	// Rebase broken PRs with Auto=true (user already confirmed via TUI)
 	autoCfg := cfg
 	autoCfg.Auto = true
 	for _, info := range result.RebaseQueue {
@@ -555,6 +568,18 @@ func runInteractive(ctx context.Context, cancel context.CancelFunc, cfg Config) 
 			}
 			return nil
 		}
+	}
+
+	// Update non-broken PRs via GitHub API
+	for _, prNum := range result.UpdateBranchNums {
+		msg := fmt.Sprintf("Updating branch of #%d...", prNum)
+		if err := spinner.New(msg, cfg.Writer).Run(func() error {
+			return git.UpdateBranch(ctx, prNum)
+		}); err != nil {
+			failure(fmt.Sprintf("Failed to update branch for PR #%d: %v", prNum, err))
+			return nil
+		}
+		success(msg)
 	}
 	return nil
 }
