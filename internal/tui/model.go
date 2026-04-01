@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // PRStatus holds the pre-computed broken state for a single PR.
@@ -253,11 +254,15 @@ func (m Model) viewSelecting() string {
 		return sb.String()
 	}
 
-	// Compute visible window
-	visibleRows := m.height - 6
+	// Pre-render status bar to know its height before computing visible rows.
+	// Fixed overhead: 1 (initial blank) + 2 (title + blank) + 1 (blank before bar) + 1 (trailing newline) = 5
+	statusBar := m.renderStatusBar()
+	statusBarLines := strings.Count(statusBar, "\n") + 1
+	visibleRows := m.height - 5 - statusBarLines
 	if visibleRows < 1 {
 		visibleRows = 1
 	}
+
 	// Adjust scroll offset so cursor stays visible
 	if m.cursor < m.offset {
 		m.offset = m.cursor
@@ -276,7 +281,7 @@ func (m Model) viewSelecting() string {
 	}
 
 	sb.WriteString("\n")
-	sb.WriteString(m.renderStatusBar())
+	sb.WriteString(statusBar)
 	sb.WriteString("\n")
 
 	return sb.String()
@@ -286,67 +291,162 @@ func (m Model) renderRow(i int) string {
 	fn := m.flat[i]
 	pr := fn.Node.Value
 	status := m.statuses[pr.Number]
+	isCursor := i == m.cursor
 
-	// Cursor indicator
-	cursor := "  "
-	if i == m.cursor {
-		cursor = "> "
-	}
-
-	// Checkbox
-	checkbox := checkboxUnselected
+	checkboxChar := checkboxUnselected
 	if m.selected[pr.Number] {
-		checkbox = checkboxSelected
+		checkboxChar = checkboxSelected
 	}
 
-	// Status indicator
-	var indicator string
+	indicChar := okIndicator
+	indicBaseStyle := okStyle
 	if status.Broken {
-		indicator = brokenStyle.Render(brokenIndicator)
-	} else {
-		indicator = okStyle.Render(okIndicator)
+		indicChar = brokenIndicator
+		indicBaseStyle = brokenStyle
 	}
 
-	// PR info
-	info := fmt.Sprintf("#%d %s  (%s ← %s)",
-		pr.Number,
-		pr.Title,
-		pr.BaseRefName,
-		pr.HeadRefName,
-	)
-
-	line := fmt.Sprintf("%s%s %s  %s%s", cursor, checkbox, indicator, fn.TreePrefix, info)
-
-	if i == m.cursor {
-		width := m.width
-		if width == 0 {
-			width = 80
+	if !isCursor {
+		// Normal row: pre-render each colored piece and concatenate.
+		prNum := prNumLipglossStyle(pr).Render(fmt.Sprintf("#%d", pr.Number))
+		branchInfo := fmt.Sprintf("(%s ← %s)",
+			baseBranchStyle.Render(pr.BaseRefName),
+			headBranchStyle.Render(pr.HeadRefName),
+		)
+		var origStr string
+		if fn.Node.OriginalBase != nil {
+			origNum := prNumLipglossStyle(*fn.Node.OriginalBase).Render(fmt.Sprintf("#%d", fn.Node.OriginalBase.Number))
+			origStr = fmt.Sprintf(" [was on %s]", origNum)
 		}
-		line = cursorRowStyle.Width(width).Render(line)
+		return fmt.Sprintf("  %s %s  %s%s %s  %s%s",
+			boldStyle.Render(checkboxChar),
+			indicBaseStyle.Render(indicChar),
+			fn.TreePrefix,
+			prNum,
+			pr.Title,
+			branchInfo,
+			origStr,
+		)
 	}
 
-	return line
+	// Cursor row: each segment must carry the cursor background explicitly.
+	// A single outer Render() doesn't work because inner ANSI resets (\x1b[0m)
+	// from colored sub-strings clear the background mid-line.
+	width := m.width
+	if width == 0 {
+		width = 80
+	}
+
+	// pl: plain text style with cursor background (bold to match cursor row weight)
+	pl := lipgloss.NewStyle().Background(cursorBg).Bold(true)
+	withBg := func(s lipgloss.Style) lipgloss.Style {
+		return s.Background(cursorBg)
+	}
+
+	var b strings.Builder
+	b.WriteString(pl.Render("> "))
+	b.WriteString(withBg(boldStyle).Render(checkboxChar))
+	b.WriteString(pl.Render(" "))
+	b.WriteString(withBg(indicBaseStyle).Render(indicChar))
+	b.WriteString(pl.Render("  " + fn.TreePrefix))
+	b.WriteString(withBg(prNumLipglossStyle(pr)).Render(fmt.Sprintf("#%d", pr.Number)))
+	b.WriteString(pl.Render(" " + pr.Title + "  ("))
+	b.WriteString(withBg(baseBranchStyle).Render(pr.BaseRefName))
+	b.WriteString(pl.Render(" ← "))
+	b.WriteString(withBg(headBranchStyle).Render(pr.HeadRefName))
+	b.WriteString(pl.Render(")"))
+
+	if fn.Node.OriginalBase != nil {
+		b.WriteString(pl.Render(" [was on "))
+		b.WriteString(withBg(prNumLipglossStyle(*fn.Node.OriginalBase)).Render(
+			fmt.Sprintf("#%d", fn.Node.OriginalBase.Number),
+		))
+		b.WriteString(pl.Render("]"))
+	}
+
+	// Pad remaining width so the background fills the full terminal row.
+	lineStr := b.String()
+	if vis := lipgloss.Width(lineStr); vis < width {
+		lineStr += pl.Render(strings.Repeat(" ", width-vis))
+	}
+
+	return lineStr
 }
 
 func (m Model) renderStatusBar() string {
-	// Collect selected PR numbers in flat order
-	var selectedNums []string
+	count := 0
 	for _, fn := range m.flat {
 		if m.selected[fn.Node.Value.Number] {
-			selectedNums = append(selectedNums, fmt.Sprintf("#%d", fn.Node.Value.Number))
+			count++
 		}
 	}
 
-	var selText string
-	if len(selectedNums) == 0 {
-		selText = "none selected"
-	} else {
-		selText = "selected: " + strings.Join(selectedNums, ", ")
+	dim := statusBarStyle
+	key := statusBarKeyStyle
+
+	maxWidth := m.width
+	if maxWidth == 0 {
+		maxWidth = 80
 	}
 
-	hints := "j/k move  space toggle  A all  a none  B broken  enter rebase  q quit"
-	bar := fmt.Sprintf("  %s  │  %s", selText, hints)
-	return statusBarStyle.Render(bar)
+	selPrefix := fmt.Sprintf("  %d selected  │  ", count)
+	prefixWidth := lipgloss.Width(selPrefix)
+
+	hints := []struct{ k, d string }{
+		{"j/k", "move"},
+		{"space", "toggle"},
+		{"A", "all"},
+		{"a", "none"},
+		{"B", "broken"},
+		{"enter", "rebase"},
+		{"q", "quit"},
+	}
+
+	// Pack hints into wrapped lines, each starting at prefixWidth indent.
+	type hintLine struct {
+		b    strings.Builder
+		used int
+	}
+	lines := []*hintLine{{used: prefixWidth}}
+
+	for _, h := range hints {
+		cur := lines[len(lines)-1]
+		hasSep := cur.used > prefixWidth
+		sepWidth := 0
+		if hasSep {
+			sepWidth = lipgloss.Width(" · ")
+		}
+		hintWidth := lipgloss.Width(h.k + " " + h.d)
+
+		if hasSep && cur.used+sepWidth+hintWidth > maxWidth {
+			// Wrap to a new line aligned with the hint area.
+			lines = append(lines, &hintLine{used: prefixWidth})
+			cur = lines[len(lines)-1]
+			hasSep = false
+		}
+
+		if hasSep {
+			cur.b.WriteString(dim.Render(" · "))
+			cur.used += sepWidth
+		}
+		cur.b.WriteString(key.Render(h.k))
+		cur.b.WriteString(dim.Render(" " + h.d))
+		cur.used += hintWidth
+	}
+
+	// Render: first line prefixed with selection count, continuation lines indented.
+	indent := strings.Repeat(" ", prefixWidth)
+	var result strings.Builder
+	for i, line := range lines {
+		if i == 0 {
+			result.WriteString(dim.Render(selPrefix))
+		} else {
+			result.WriteString("\n")
+			result.WriteString(indent)
+		}
+		result.WriteString(line.b.String())
+	}
+
+	return result.String()
 }
 
 func (m Model) buildQueues() (rebase []stackedpr.RebaseInfo, update []int) {
