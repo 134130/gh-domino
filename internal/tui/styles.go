@@ -1,12 +1,20 @@
 package tui
 
 import (
+	"image/color"
+
 	"github.com/134130/gh-domino/gitobj"
 	"charm.land/lipgloss/v2"
 )
 
+func cursorBg(isDark bool) color.Color {
+	if isDark {
+		return lipgloss.Color("237")
+	}
+	return lipgloss.Color("254")
+}
+
 var (
-	cursorBg        = lipgloss.Color("237")
 	titleStyle      = lipgloss.NewStyle().Bold(true)
 	statusBarStyle    = lipgloss.NewStyle()
 	statusBarKeyStyle = lipgloss.NewStyle().Bold(true)

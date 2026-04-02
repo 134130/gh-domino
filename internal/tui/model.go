@@ -77,6 +77,7 @@ type Model struct {
 
 	width  int
 	height int
+	isDark bool
 }
 
 // msgLoaded is sent by loadCmd when data is ready.
@@ -130,7 +131,7 @@ func RunSelector(ctx context.Context, cancel context.CancelFunc, loadFn LoadFunc
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.spinner.Tick, m.loadCmd())
+	return tea.Batch(m.spinner.Tick, m.loadCmd(), tea.RequestBackgroundColor)
 }
 
 func (m Model) loadCmd() tea.Cmd {
@@ -151,6 +152,10 @@ func (m Model) loadCmd() tea.Cmd {
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.BackgroundColorMsg:
+		m.isDark = msg.IsDark()
+		return m, nil
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -339,8 +344,9 @@ func (m Model) renderCursorRow(fn FlatNode, checkbox, indic string, indicStyle l
 
 	// Each segment must carry cursorBg explicitly because inner ANSI resets (\x1b[0m)
 	// from colored sub-strings clear the background mid-line.
-	pl := lipgloss.NewStyle().Background(cursorBg).Bold(true)
-	withBg := func(s lipgloss.Style) lipgloss.Style { return s.Background(cursorBg) }
+	bg := cursorBg(m.isDark)
+	pl := lipgloss.NewStyle().Background(bg).Bold(true)
+	withBg := func(s lipgloss.Style) lipgloss.Style { return s.Background(bg) }
 
 	var b strings.Builder
 	b.WriteString(pl.Render("> "))
