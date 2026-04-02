@@ -240,18 +240,15 @@ func (m Model) View() string {
 }
 
 func (m Model) viewSelecting() string {
-	var sb strings.Builder
-
-	sb.WriteString("\n")
-	sb.WriteString("  ")
-	sb.WriteString(titleStyle.Render("Pull Requests — select PRs to rebase"))
-	sb.WriteString("\n\n")
-
 	if len(m.flat) == 0 {
-		sb.WriteString("  No stacked pull requests found.\n")
-		sb.WriteString("\n")
-		sb.WriteString(statusBarStyle.Render("  q quit"))
-		return sb.String()
+		return lipgloss.JoinVertical(lipgloss.Left,
+			"",
+			"  "+titleStyle.Render("Pull Requests — select PRs to rebase"),
+			"",
+			"  No stacked pull requests found.",
+			"",
+			statusBarStyle.Render("  q quit"),
+		)
 	}
 
 	// Pre-render status bar to know its height before computing visible rows.
@@ -263,7 +260,7 @@ func (m Model) viewSelecting() string {
 		visibleRows = 1
 	}
 
-	// Adjust scroll offset so cursor stays visible
+	// Adjust scroll offset so cursor stays visible.
 	if m.cursor < m.offset {
 		m.offset = m.cursor
 	} else if m.cursor >= m.offset+visibleRows {
@@ -275,78 +272,78 @@ func (m Model) viewSelecting() string {
 		end = len(m.flat)
 	}
 
+	rows := make([]string, end-m.offset)
 	for i := m.offset; i < end; i++ {
-		sb.WriteString(m.renderRow(i))
-		sb.WriteString("\n")
+		rows[i-m.offset] = m.renderRow(i)
 	}
 
-	sb.WriteString("\n")
-	sb.WriteString(statusBar)
-	sb.WriteString("\n")
-
-	return sb.String()
+	sections := []string{"", "  " + titleStyle.Render("Pull Requests — select PRs to rebase"), ""}
+	sections = append(sections, rows...)
+	sections = append(sections, "", statusBar, "")
+	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
 
 func (m Model) renderRow(i int) string {
 	fn := m.flat[i]
 	pr := fn.Node.Value
 	status := m.statuses[pr.Number]
-	isCursor := i == m.cursor
 
-	checkboxChar := checkboxUnselected
+	checkbox := checkboxUnselected
 	if m.selected[pr.Number] {
-		checkboxChar = checkboxSelected
+		checkbox = checkboxSelected
 	}
-
-	indicChar := okIndicator
-	indicBaseStyle := okStyle
+	indic, indicStyle := okIndicator, okStyle
 	if status.Broken {
-		indicChar = brokenIndicator
-		indicBaseStyle = brokenStyle
+		indic, indicStyle = brokenIndicator, brokenStyle
 	}
 
-	if !isCursor {
-		// Normal row: pre-render each colored piece and concatenate.
-		prNum := prNumLipglossStyle(pr).Render(fmt.Sprintf("#%d", pr.Number))
-		branchInfo := fmt.Sprintf("(%s ← %s)",
-			baseBranchStyle.Render(pr.BaseRefName),
-			headBranchStyle.Render(pr.HeadRefName),
-		)
-		var origStr string
-		if fn.Node.OriginalBase != nil {
-			origNum := prNumLipglossStyle(*fn.Node.OriginalBase).Render(fmt.Sprintf("#%d", fn.Node.OriginalBase.Number))
-			origStr = fmt.Sprintf(" [was on %s]", origNum)
-		}
-		return fmt.Sprintf("  %s %s  %s%s %s  %s%s",
-			boldStyle.Render(checkboxChar),
-			indicBaseStyle.Render(indicChar),
-			fn.TreePrefix,
-			prNum,
-			pr.Title,
-			branchInfo,
-			origStr,
-		)
+	if i != m.cursor {
+		return m.renderNormalRow(fn, checkbox, indic, indicStyle)
 	}
+	return m.renderCursorRow(fn, checkbox, indic, indicStyle)
+}
 
-	// Cursor row: each segment must carry the cursor background explicitly.
-	// A single outer Render() doesn't work because inner ANSI resets (\x1b[0m)
-	// from colored sub-strings clear the background mid-line.
+func (m Model) renderNormalRow(fn FlatNode, checkbox, indic string, indicStyle lipgloss.Style) string {
+	pr := fn.Node.Value
+	prNum := prNumLipglossStyle(pr).Render(fmt.Sprintf("#%d", pr.Number))
+	branchInfo := fmt.Sprintf("(%s ← %s)",
+		baseBranchStyle.Render(pr.BaseRefName),
+		headBranchStyle.Render(pr.HeadRefName),
+	)
+	origStr := ""
+	if fn.Node.OriginalBase != nil {
+		origNum := prNumLipglossStyle(*fn.Node.OriginalBase).Render(fmt.Sprintf("#%d", fn.Node.OriginalBase.Number))
+		origStr = fmt.Sprintf(" [was on %s]", origNum)
+	}
+	return fmt.Sprintf("  %s %s  %s%s %s  %s%s",
+		boldStyle.Render(checkbox),
+		indicStyle.Render(indic),
+		fn.TreePrefix,
+		prNum,
+		pr.Title,
+		branchInfo,
+		origStr,
+	)
+}
+
+func (m Model) renderCursorRow(fn FlatNode, checkbox, indic string, indicStyle lipgloss.Style) string {
+	pr := fn.Node.Value
+
 	width := m.width
 	if width == 0 {
 		width = 80
 	}
 
-	// pl: plain text style with cursor background (bold to match cursor row weight)
+	// Each segment must carry cursorBg explicitly because inner ANSI resets (\x1b[0m)
+	// from colored sub-strings clear the background mid-line.
 	pl := lipgloss.NewStyle().Background(cursorBg).Bold(true)
-	withBg := func(s lipgloss.Style) lipgloss.Style {
-		return s.Background(cursorBg)
-	}
+	withBg := func(s lipgloss.Style) lipgloss.Style { return s.Background(cursorBg) }
 
 	var b strings.Builder
 	b.WriteString(pl.Render("> "))
-	b.WriteString(withBg(boldStyle).Render(checkboxChar))
+	b.WriteString(withBg(boldStyle).Render(checkbox))
 	b.WriteString(pl.Render(" "))
-	b.WriteString(withBg(indicBaseStyle).Render(indicChar))
+	b.WriteString(withBg(indicStyle).Render(indic))
 	b.WriteString(pl.Render("  " + fn.TreePrefix))
 	b.WriteString(withBg(prNumLipglossStyle(pr)).Render(fmt.Sprintf("#%d", pr.Number)))
 	b.WriteString(pl.Render(" " + pr.Title + "  ("))
@@ -354,7 +351,6 @@ func (m Model) renderRow(i int) string {
 	b.WriteString(pl.Render(" ← "))
 	b.WriteString(withBg(headBranchStyle).Render(pr.HeadRefName))
 	b.WriteString(pl.Render(")"))
-
 	if fn.Node.OriginalBase != nil {
 		b.WriteString(pl.Render(" [was on "))
 		b.WriteString(withBg(prNumLipglossStyle(*fn.Node.OriginalBase)).Render(
@@ -364,12 +360,11 @@ func (m Model) renderRow(i int) string {
 	}
 
 	// Pad remaining width so the background fills the full terminal row.
-	lineStr := b.String()
-	if vis := lipgloss.Width(lineStr); vis < width {
-		lineStr += pl.Render(strings.Repeat(" ", width-vis))
+	line := b.String()
+	if extra := width - lipgloss.Width(line); extra > 0 {
+		line += pl.Render(strings.Repeat(" ", extra))
 	}
-
-	return lineStr
+	return line
 }
 
 func (m Model) renderStatusBar() string {
@@ -435,18 +430,15 @@ func (m Model) renderStatusBar() string {
 
 	// Render: first line prefixed with selection count, continuation lines indented.
 	indent := strings.Repeat(" ", prefixWidth)
-	var result strings.Builder
+	renderedLines := make([]string, len(lines))
 	for i, line := range lines {
+		prefix := indent
 		if i == 0 {
-			result.WriteString(dim.Render(selPrefix))
-		} else {
-			result.WriteString("\n")
-			result.WriteString(indent)
+			prefix = dim.Render(selPrefix)
 		}
-		result.WriteString(line.b.String())
+		renderedLines[i] = prefix + line.b.String()
 	}
-
-	return result.String()
+	return strings.Join(renderedLines, "\n")
 }
 
 func (m Model) buildQueues() (rebase []stackedpr.RebaseInfo, update []int) {
