@@ -9,9 +9,9 @@ import (
 
 	"github.com/134130/gh-domino/git"
 	"github.com/134130/gh-domino/internal/color"
-	"github.com/charmbracelet/bubbles/spinner"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/spinner"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 var logBoxStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("8"))
@@ -45,7 +45,7 @@ func (m *Model) Init() tea.Cmd {
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "ctrl+c":
 			m.cancel()
@@ -59,8 +59,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *Model) View() string {
-	return m.String()
+func (m *Model) View() tea.View {
+	return tea.NewView(m.String())
 }
 
 func (m *Model) SetCurrentContext(ctxMsg string) {

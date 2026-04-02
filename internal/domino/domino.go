@@ -15,7 +15,7 @@ import (
 	"github.com/134130/gh-domino/internal/tui"
 	"github.com/134130/gh-domino/internal/ui"
 	"github.com/134130/gh-domino/internal/util"
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 var write = func(msg string, args ...interface{}) {}

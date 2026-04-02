@@ -2,7 +2,7 @@ package tui
 
 import (
 	"github.com/134130/gh-domino/gitobj"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 var (

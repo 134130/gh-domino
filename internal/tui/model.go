@@ -6,10 +6,10 @@ import (
 	"strings"
 
 	"github.com/134130/gh-domino/internal/stackedpr"
-	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/spinner"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/spinner"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // PRStatus holds the pre-computed broken state for a single PR.
@@ -107,7 +107,7 @@ func NewModel(ctx context.Context, cancel context.CancelFunc, loadFn LoadFunc) M
 // Returns nil if the user quit without selecting.
 func RunSelector(ctx context.Context, cancel context.CancelFunc, loadFn LoadFunc) (*SelectorResult, error) {
 	m := NewModel(ctx, cancel, loadFn)
-	p := tea.NewProgram(m, tea.WithAltScreen())
+	p := tea.NewProgram(m)
 	finalModel, err := p.Run()
 	if err != nil {
 		return nil, err
@@ -161,7 +161,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if key.Matches(msg, m.keys.Quit) {
 			m.quit = true
 			m.cancel()
@@ -188,7 +188,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) updateSelecting(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) updateSelecting(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Up):
 		if m.cursor > 0 {
@@ -229,14 +229,17 @@ func (m Model) updateSelecting(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) View() string {
+func (m Model) View() tea.View {
+	var content string
 	switch m.phase {
 	case phaseLoading:
-		return fmt.Sprintf("\n  %s Loading pull requests...\n", m.spinner.View())
+		content = fmt.Sprintf("\n  %s Loading pull requests...\n", m.spinner.View())
 	case phaseSelecting:
-		return m.viewSelecting()
+		content = m.viewSelecting()
 	}
-	return ""
+	v := tea.NewView(content)
+	v.AltScreen = true
+	return v
 }
 
 func (m Model) viewSelecting() string {

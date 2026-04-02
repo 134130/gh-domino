@@ -3,7 +3,7 @@ package stackedpr
 import (
 	"fmt"
 
-	"github.com/charmbracelet/lipgloss/tree"
+	"charm.land/lipgloss/v2/tree"
 
 	"github.com/134130/gh-domino/internal/color"
 )
