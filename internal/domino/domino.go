@@ -5,7 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strings"
+	"path/filepath"
+	"sync"
 
 	"github.com/134130/gh-domino/git"
 	"github.com/134130/gh-domino/gitobj"
@@ -16,6 +17,7 @@ import (
 	"github.com/134130/gh-domino/internal/ui"
 	"github.com/134130/gh-domino/internal/util"
 	tea "charm.land/bubbletea/v2"
+	"golang.org/x/sync/errgroup"
 )
 
 var write = func(msg string, args ...interface{}) {}
@@ -26,6 +28,18 @@ func success(msg string) {
 
 func failure(msg string) {
 	write("%s %s\n", color.Red("✘"), msg)
+}
+
+// syncWriter wraps an io.Writer with a mutex to prevent interleaved output.
+type syncWriter struct {
+	mu sync.Mutex
+	w  interface{ Write([]byte) (int, error) }
+}
+
+func (sw *syncWriter) Write(p []byte) (int, error) {
+	sw.mu.Lock()
+	defer sw.mu.Unlock()
+	return sw.w.Write(p)
 }
 
 func Run(ctx context.Context, cfg Config) error {
@@ -58,44 +72,13 @@ func Run(ctx context.Context, cfg Config) error {
 	p := tea.NewProgram(m, opts...)
 
 	go func() {
-		if _, err := p.Run(); err != nil {
-			cancel()
-			failure(fmt.Sprintf("start UI: %v", err))
-		}
+		_, _ = p.Run()
 	}()
 
 	defer func() {
 		p.Quit()
 		p.Wait()
 	}()
-
-	if cfg.TempDir {
-		m.SetCurrentContext("Setting up temporary directory...")
-
-		url, err := git.GetGitURL(ctx, m.CommandModifier(true))
-		if err != nil {
-			return fmt.Errorf("get git URL: %w", err)
-		}
-
-		tempDir := fmt.Sprintf("/tmp/gh-domino/%s", strings.ReplaceAll(url, "/", "-"))
-		err = os.MkdirAll(tempDir, 0755)
-		if err != nil {
-			return fmt.Errorf("create temp dir: %w", err)
-		}
-
-		if err := git.Clone(ctx, url, tempDir, m.CommandModifier(true)); err != nil {
-			if !strings.Contains(err.Error(), "already exists and is not an empty directory") {
-				return fmt.Errorf("clone repository: %w", err)
-			}
-		}
-
-		// Change working directory to the cloned repo
-		if err := os.Chdir(tempDir); err != nil {
-			return fmt.Errorf("change directory to temp dir: %w", err)
-		}
-
-		m.Success("Setting up temporary directory...")
-	}
 
 	m.SetCurrentContext("Fetching pull requests...")
 
@@ -152,20 +135,11 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 
 	processedPRs := make(map[int]bool)
-
 	totalProcessed := 0
 	for _, root := range roots {
 		processed, err := processDependencyTree(ctx, root, prMap, mergedPRsByHeadRef, prHeadShas, cfg, mergedPRs, processedPRs)
 		if err != nil {
-			var errRebaseConflict *ErrRebaseConflict
-			if errors.As(err, &errRebaseConflict) {
-				failure(fmt.Sprintf(`Failed to handle broken PR %s due to rebase conflicts.
-  Please resolve the conflicts manually and re-run the tool if needed.
-  You can use the following command to rebase manually:
-      %s`, errRebaseConflict.BrokenPR.PR.PRNumberString(), errRebaseConflict.Command()))
-			} else {
-				failure(err.Error())
-			}
+			reportError(err)
 			return nil
 		}
 		totalProcessed += processed
@@ -178,7 +152,20 @@ func Run(ctx context.Context, cfg Config) error {
 	return nil
 }
 
+func reportError(err error) {
+	var errRebaseConflict *ErrRebaseConflict
+	if errors.As(err, &errRebaseConflict) {
+		failure(fmt.Sprintf(`Failed to handle broken PR %s due to rebase conflicts.
+  Please resolve the conflicts manually and re-run the tool if needed.
+  You can use the following command to rebase manually:
+      %s`, errRebaseConflict.BrokenPR.PR.PRNumberString(), errRebaseConflict.Command()))
+	} else {
+		failure(err.Error())
+	}
+}
+
 // processDependencyTree recursively traverses the dependency tree and handles broken PRs.
+// Used in Auto/Headless/DryRun mode — runs sequentially without worktrees.
 func processDependencyTree(
 	ctx context.Context,
 	node *stackedpr.Node,
@@ -211,7 +198,7 @@ func processDependencyTree(
 			newBase = pr.BaseRefName
 		}
 		brokenPR := stackedpr.RebaseInfo{PR: pr, NewBase: newBase, Upstream: upstream}
-		if err := HandleBrokenPR(ctx, brokenPR, cfg, prHeadShas); err != nil {
+		if err := HandleBrokenPR(ctx, brokenPR, cfg, prHeadShas, nil); err != nil {
 			return totalProcessed, err
 		}
 		totalProcessed++
@@ -365,6 +352,39 @@ func determinePRState(
 	return false, "", "", nil
 }
 
+// rebaseWithWorktree creates a temporary worktree (if wtBaseDir is set), runs HandleBrokenPR,
+// and cleans up the worktree afterward.
+func rebaseWithWorktree(
+	ctx context.Context,
+	brokenPR stackedpr.RebaseInfo,
+	cfg Config,
+	prHeadShas map[string]string,
+	wtBaseDir string,
+	prHeadShasMu ...*sync.Mutex,
+) error {
+	var mods []git.CommandModifier
+	var wtPath string
+
+	if wtBaseDir != "" && !cfg.DryRun {
+		wtPath = filepath.Join(wtBaseDir, brokenPR.PR.HeadRefName)
+		if err := git.WorktreeAdd(ctx, wtPath, brokenPR.PR.HeadRefName); err != nil {
+			return fmt.Errorf("create worktree for %s: %w", brokenPR.PR.HeadRefName, err)
+		}
+		defer func() {
+			_ = git.WorktreeRemove(ctx, wtPath)
+			_ = os.RemoveAll(wtPath)
+		}()
+		mods = append(mods, git.WithWorkDir(wtPath))
+	}
+
+	var mu *sync.Mutex
+	if len(prHeadShasMu) > 0 {
+		mu = prHeadShasMu[0]
+	}
+
+	return HandleBrokenPR(ctx, brokenPR, cfg, prHeadShas, mu, mods...)
+}
+
 // HandleBrokenPR performs the necessary actions on a broken PR, such as rebasing,
 // pushing, and updating the base branch on the remote. It handles both dry-run and real modes.
 func HandleBrokenPR(
@@ -372,6 +392,8 @@ func HandleBrokenPR(
 	brokenPR stackedpr.RebaseInfo,
 	cfg Config,
 	prHeadShas map[string]string,
+	prHeadShasMu *sync.Mutex,
+	mods ...git.CommandModifier,
 ) error {
 	if cfg.DryRun {
 		updateBaseBranchString := ""
@@ -379,7 +401,13 @@ func HandleBrokenPR(
 			updateBaseBranchString = fmt.Sprintf(" (update base branch to %s)", color.Cyan(brokenPR.NewBase))
 		}
 		write("  %s%s\n", brokenPR.PR.String(), updateBaseBranchString)
+		if prHeadShasMu != nil {
+			prHeadShasMu.Lock()
+		}
 		prHeadShas[brokenPR.PR.HeadRefName] = "dummy-sha-after-rebase"
+		if prHeadShasMu != nil {
+			prHeadShasMu.Unlock()
+		}
 		return nil
 	}
 
@@ -404,11 +432,11 @@ func HandleBrokenPR(
 
 	msg := fmt.Sprintf("Rebasing %s onto %s...", brokenPR.PR.String(), color.Cyan(brokenPR.NewBase))
 	if err := spinner.New(msg, cfg.Writer).Run(func() error {
-		return git.Rebase(ctx, fmt.Sprintf("origin/%s", brokenPR.NewBase), brokenPR.Upstream, brokenPR.PR.HeadRefName)
+		return git.Rebase(ctx, fmt.Sprintf("origin/%s", brokenPR.NewBase), brokenPR.Upstream, brokenPR.PR.HeadRefName, mods...)
 	}); err != nil {
 		if errors.Is(err, git.ErrRebaseConflict) {
 			// Attempt to abort the rebase if there was a conflict.
-			if err := git.AbortRebase(ctx); err != nil {
+			if err := git.AbortRebase(ctx, mods...); err != nil {
 				return fmt.Errorf("rebase conflict occurred and failed to abort rebase: %v", err)
 			}
 			return &ErrRebaseConflict{BrokenPR: brokenPR}
@@ -430,17 +458,23 @@ func HandleBrokenPR(
 
 	msg = fmt.Sprintf("Pushing %s...", brokenPR.PR.PRNumberString())
 	if err := spinner.New(msg, cfg.Writer).Run(func() error {
-		return git.Push(ctx, brokenPR.PR.HeadRefName)
+		return git.Push(ctx, brokenPR.PR.HeadRefName, mods...)
 	}); err != nil {
 		return fmt.Errorf("failed to push branch %s: %v", brokenPR.PR.HeadRefName, err)
 	}
 	success(msg)
 
-	newSha, err := git.RevParse(ctx, "origin/"+brokenPR.PR.HeadRefName)
+	newSha, err := git.RevParse(ctx, "origin/"+brokenPR.PR.HeadRefName, mods...)
 	if err != nil {
 		return fmt.Errorf("could not get new SHA for %s: %v", brokenPR.PR.HeadRefName, err)
 	}
+	if prHeadShasMu != nil {
+		prHeadShasMu.Lock()
+	}
 	prHeadShas[brokenPR.PR.HeadRefName] = newSha
+	if prHeadShasMu != nil {
+		prHeadShasMu.Unlock()
+	}
 
 	// --- Update Base Branch ---
 	if brokenPR.PR.BaseRefName != brokenPR.NewBase {
@@ -460,7 +494,7 @@ func HandleBrokenPR(
 		msg = fmt.Sprintf("Updating base branch of %s to %s...", brokenPR.PR.PRNumberString(), color.Cyan(brokenPR.NewBase))
 
 		if err = spinner.New(msg, cfg.Writer).Run(func() error {
-			return git.UpdateBaseBranch(ctx, brokenPR.PR.Number, brokenPR.NewBase)
+			return git.UpdateBaseBranch(ctx, brokenPR.PR.Number, brokenPR.NewBase, mods...)
 		}); err != nil {
 			return fmt.Errorf("failed to update base branch for PR %s: %v", brokenPR.PR.PRNumberString(), err)
 		}
@@ -469,9 +503,36 @@ func HandleBrokenPR(
 	return nil
 }
 
+// groupByStack groups a flat RebaseQueue into per-stack slices using the dependency tree.
+// Within each stack, items are in DFS order (parent before child).
+func groupByStack(roots []*stackedpr.Node, queue []stackedpr.RebaseInfo) [][]stackedpr.RebaseInfo {
+	inQueue := make(map[int]stackedpr.RebaseInfo, len(queue))
+	for _, info := range queue {
+		inQueue[info.PR.Number] = info
+	}
+	var stacks [][]stackedpr.RebaseInfo
+	for _, root := range roots {
+		var stack []stackedpr.RebaseInfo
+		collectFromTree(root, inQueue, &stack)
+		if len(stack) > 0 {
+			stacks = append(stacks, stack)
+		}
+	}
+	return stacks
+}
+
+func collectFromTree(node *stackedpr.Node, inQueue map[int]stackedpr.RebaseInfo, stack *[]stackedpr.RebaseInfo) {
+	if info, ok := inQueue[node.Value.Number]; ok {
+		*stack = append(*stack, info)
+	}
+	for _, child := range node.Children {
+		collectFromTree(child, inQueue, stack)
+	}
+}
+
 // runInteractive runs the v2 interactive TUI selection flow.
 // Phase 1: bubbletea TUI for loading + PR selection (alt screen).
-// Phase 2: rebase selected PRs using existing HandleBrokenPR logic (Auto=true).
+// Phase 2: rebase selected PRs using worktrees, parallel across independent stacks.
 func runInteractive(ctx context.Context, cancel context.CancelFunc, cfg Config) error {
 	loadFn := func(ctx context.Context) (*tui.LoadResult, error) {
 		if err := git.Fetch(ctx, "origin"); err != nil {
@@ -552,25 +613,47 @@ func runInteractive(ctx context.Context, cancel context.CancelFunc, cfg Config) 
 		return nil
 	}
 
-	// Rebase broken PRs with Auto=true (user already confirmed via TUI)
-	autoCfg := cfg
-	autoCfg.Auto = true
-	for _, info := range result.RebaseQueue {
-		if err := HandleBrokenPR(ctx, info, autoCfg, result.PrHeadShas); err != nil {
-			var conflictErr *ErrRebaseConflict
-			if errors.As(err, &conflictErr) {
-				failure(fmt.Sprintf(`Failed to handle broken PR %s due to rebase conflicts.
-  Please resolve the conflicts manually and re-run the tool if needed.
-  You can use the following command to rebase manually:
-      %s`, conflictErr.BrokenPR.PR.PRNumberString(), conflictErr.Command()))
-			} else {
-				failure(err.Error())
+	// Rebase broken PRs: parallel across independent stacks, worktree per PR.
+	if len(result.RebaseQueue) > 0 {
+		sw := &syncWriter{w: cfg.Writer}
+		autoCfg := cfg
+		autoCfg.Auto = true
+		autoCfg.Writer = sw
+		write = func(msg string, args ...interface{}) {
+			_, _ = fmt.Fprintf(sw, msg, args...)
+		}
+
+		wtBaseDir := filepath.Join(os.TempDir(), "gh-domino-wt")
+		_ = os.MkdirAll(wtBaseDir, 0755)
+		defer os.RemoveAll(wtBaseDir)
+
+		stacks := groupByStack(result.Roots, result.RebaseQueue)
+		var mu sync.Mutex
+		g, gctx := errgroup.WithContext(ctx)
+		stackErrs := make([]error, len(stacks))
+
+		for i, stack := range stacks {
+			i, stack := i, stack
+			g.Go(func() error {
+				for _, info := range stack {
+					if err := rebaseWithWorktree(gctx, info, autoCfg, result.PrHeadShas, wtBaseDir, &mu); err != nil {
+						stackErrs[i] = err
+						return nil // don't cancel other stacks
+					}
+				}
+				return nil
+			})
+		}
+		_ = g.Wait()
+
+		for _, err := range stackErrs {
+			if err != nil {
+				reportError(err)
 			}
-			return nil
 		}
 	}
 
-	// Update non-broken PRs via GitHub API
+	// Update non-broken PRs via GitHub API (sequential).
 	for _, prNum := range result.UpdateBranchNums {
 		msg := fmt.Sprintf("Updating branch of #%d...", prNum)
 		if err := spinner.New(msg, cfg.Writer).Run(func() error {

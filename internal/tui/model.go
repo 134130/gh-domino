@@ -31,6 +31,7 @@ type LoadFunc func(ctx context.Context) (*LoadResult, error)
 
 // SelectorResult is returned from RunSelector after the user confirms.
 type SelectorResult struct {
+	Roots            []*stackedpr.Node      // dependency tree roots for stack grouping
 	RebaseQueue      []stackedpr.RebaseInfo // broken PRs → local git rebase
 	UpdateBranchNums []int                  // non-broken PRs → gh pr update-branch --rebase
 	PrHeadShas       map[string]string
@@ -124,6 +125,7 @@ func RunSelector(ctx context.Context, cancel context.CancelFunc, loadFn LoadFunc
 		return nil, tuiModel.loadErr
 	}
 	return &SelectorResult{
+		Roots:            tuiModel.roots,
 		RebaseQueue:      tuiModel.rebaseQueue,
 		UpdateBranchNums: tuiModel.updateBranchNums,
 		PrHeadShas:       tuiModel.prHeadShas,

@@ -97,7 +97,7 @@ func GetBranchCommits(ctx context.Context, base, head string) ([]string, error) 
 	return commits, nil
 }
 
-func Rebase(ctx context.Context, newBase, upstream, branch string) error {
+func Rebase(ctx context.Context, newBase, upstream, branch string, mods ...CommandModifier) error {
 	var gitErr *GitError
 
 	args := []string{"rebase"}
@@ -107,7 +107,7 @@ func Rebase(ctx context.Context, newBase, upstream, branch string) error {
 		args = append(args, newBase, branch)
 	}
 
-	if err := NewCommand("git", args...).Run(ctx); err != nil && errors.As(err, &gitErr) {
+	if err := NewCommand("git", args...).Run(ctx, mods...); err != nil && errors.As(err, &gitErr) {
 		if gitErr.ExitCode == 1 {
 			return ErrRebaseConflict
 		}
@@ -117,12 +117,20 @@ func Rebase(ctx context.Context, newBase, upstream, branch string) error {
 	return nil
 }
 
-func AbortRebase(ctx context.Context) error {
-	return NewCommand("git", "rebase", "--abort").Run(ctx)
+func AbortRebase(ctx context.Context, mods ...CommandModifier) error {
+	return NewCommand("git", "rebase", "--abort").Run(ctx, mods...)
 }
 
-func Push(ctx context.Context, branch string) error {
-	return NewCommand("git", "push", "--force-with-lease", "origin", branch).Run(ctx)
+func Push(ctx context.Context, branch string, mods ...CommandModifier) error {
+	return NewCommand("git", "push", "--force-with-lease", "origin", branch).Run(ctx, mods...)
+}
+
+func WorktreeAdd(ctx context.Context, path, branch string, mods ...CommandModifier) error {
+	return NewCommand("git", "worktree", "add", "--force", path, "-B", branch, "origin/"+branch).Run(ctx, mods...)
+}
+
+func WorktreeRemove(ctx context.Context, path string, mods ...CommandModifier) error {
+	return NewCommand("git", "worktree", "remove", "--force", path).Run(ctx, mods...)
 }
 
 func Fetch(ctx context.Context, remote string, mods ...CommandModifier) error {
