@@ -6,7 +6,9 @@ import (
 	"io"
 
 	"github.com/134130/gh-domino/internal/app"
+	"github.com/134130/gh-domino/internal/app/gitkitstore"
 	"github.com/134130/gh-domino/internal/output"
+	"github.com/134130/gitkit/gitcmd"
 )
 
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
@@ -72,5 +74,6 @@ func buildPlan(ctx context.Context, cfg Config) (*app.Plan, error) {
 	if cfg.Repo != "" {
 		return nil, fmt.Errorf("--repo is not implemented yet")
 	}
-	return app.NewPlanner(app.NewLegacyStore()).BuildPlan(ctx, cfg.PlanOptions())
+	store := gitkitstore.New(gitcmd.NewRunner())
+	return app.NewPlanner(store).BuildPlan(ctx, cfg.PlanOptions())
 }

@@ -1,11 +1,12 @@
 module github.com/134130/gh-domino
 
-go 1.25.0
+go 1.26.3
 
 require (
 	charm.land/bubbles/v2 v2.1.0
 	charm.land/bubbletea/v2 v2.0.2
 	charm.land/lipgloss/v2 v2.0.2
+	github.com/134130/gitkit v0.0.0
 	github.com/briandowns/spinner v1.23.2
 	github.com/cli/safeexec v1.0.1
 	github.com/goccy/go-yaml v1.18.0
@@ -36,3 +37,5 @@ require (
 	golang.org/x/term v0.34.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/134130/gitkit => ../gitkit

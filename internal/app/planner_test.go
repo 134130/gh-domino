@@ -211,7 +211,7 @@ func (s *fakeStore) RefSHA(_ context.Context, ref string) (string, error) {
 	return "", fmt.Errorf("missing ref SHA for %s", ref)
 }
 
-func (s *fakeStore) DefaultBranch(context.Context) (string, error) {
+func (s *fakeStore) DefaultBranch(context.Context, string) (string, error) {
 	return s.defaultBranch, nil
 }
 

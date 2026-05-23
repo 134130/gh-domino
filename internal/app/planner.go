@@ -245,7 +245,7 @@ func (p Planner) determinePRState(
 		return true, ReasonParentDiverged, "", "", nil
 	}
 
-	defaultBranch, err := p.store.DefaultBranch(ctx)
+	defaultBranch, err := p.store.DefaultBranch(ctx, opts.Remote)
 	if err != nil {
 		return false, ReasonNone, "", "", fmt.Errorf("get default branch: %w", err)
 	}
@@ -335,7 +335,7 @@ func (p Planner) buildDependencyTree(
 
 		if defaultBranch == "" {
 			var err error
-			defaultBranch, err = p.store.DefaultBranch(ctx)
+			defaultBranch, err = p.store.DefaultBranch(ctx, opts.Remote)
 			if err != nil {
 				return nil, fmt.Errorf("get default branch: %w", err)
 			}
