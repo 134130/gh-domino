@@ -1,0 +1,6 @@
+pre-commit:
+  parallel: false
+  jobs:
+    - run: mise r fix
+      stage_fixed: true
+    - run: mise r test
