@@ -7,11 +7,11 @@ import (
 	"path"
 	"strings"
 
-	"github.com/134130/gh-domino/git"
-	"github.com/134130/gh-domino/internal/color"
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/134130/gh-domino/git"
+	"github.com/134130/gh-domino/internal/color"
 )
 
 var logBoxStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("8"))

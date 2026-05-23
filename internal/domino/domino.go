@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/134130/gh-domino/git"
 	"github.com/134130/gh-domino/gitobj"
 	"github.com/134130/gh-domino/internal/color"
@@ -16,7 +17,6 @@ import (
 	"github.com/134130/gh-domino/internal/tui"
 	"github.com/134130/gh-domino/internal/ui"
 	"github.com/134130/gh-domino/internal/util"
-	tea "charm.land/bubbletea/v2"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -118,7 +118,7 @@ func Run(ctx context.Context, cfg Config) error {
 	p.Quit()
 	p.Wait()
 
-	write(stackedpr.RenderDependencyTree(roots))
+	write("%s", stackedpr.RenderDependencyTree(roots))
 	write("\n\n")
 
 	if cfg.DryRun {
@@ -625,7 +625,9 @@ func runInteractive(ctx context.Context, cancel context.CancelFunc, cfg Config) 
 
 		wtBaseDir := filepath.Join(os.TempDir(), "gh-domino-wt")
 		_ = os.MkdirAll(wtBaseDir, 0755)
-		defer os.RemoveAll(wtBaseDir)
+		defer func() {
+			_ = os.RemoveAll(wtBaseDir)
+		}()
 
 		stacks := groupByStack(result.Roots, result.RebaseQueue)
 		var mu sync.Mutex

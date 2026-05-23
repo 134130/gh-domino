@@ -1,14 +1,5 @@
 package ui
 
-import (
-	tea "charm.land/bubbletea/v2"
-)
-
-type LogWriter struct {
-	m *Model
-	p *tea.Program
-}
-
 //func NewLogWriter(m *Model, p *tea.Program) *LogWriter {
 //	return &LogWriter{m: m, p: p}
 //}
