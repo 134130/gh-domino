@@ -4,19 +4,26 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/134130/gh-domino/internal/app"
 	"github.com/134130/gh-domino/internal/output"
 )
 
-func TestParseLegacyFlags(t *testing.T) {
-	cfg, err := Parse([]string{"--dry-run", "--headless"})
+func TestParseDefaultCommandIsTUI(t *testing.T) {
+	cfg, err := Parse([]string{"--format", "json", "--remote", "upstream"})
 	if err != nil {
 		t.Fatalf("Parse returned error: %v", err)
 	}
-	if cfg.Command != CommandLegacy {
-		t.Fatalf("command mismatch: want %q, got %q", CommandLegacy, cfg.Command)
+
+	want := Config{
+		Command:     CommandTUI,
+		Remote:      "upstream",
+		Author:      "@me",
+		MergedLimit: 30,
+		Format:      output.FormatJSON,
+		Parallel:    1,
 	}
-	if !cfg.DryRun || !cfg.Headless {
-		t.Fatalf("legacy flags were not parsed: %#v", cfg)
+	if !reflect.DeepEqual(cfg, want) {
+		t.Fatalf("config mismatch\nwant: %#v\n got: %#v", want, cfg)
 	}
 }
 
@@ -53,6 +60,47 @@ func TestParseListJSONAlias(t *testing.T) {
 	}
 	if cfg.State != "broken" || !cfg.Flat {
 		t.Fatalf("list flags were not parsed: %#v", cfg)
+	}
+}
+
+func TestParsePlanRepeatableSelectors(t *testing.T) {
+	cfg, err := Parse([]string{"plan", "--pr", "52", "--pr", "57", "--subtree", "60", "--stack", "80", "--stack", "81"})
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+
+	if !reflect.DeepEqual(cfg.PRNumbers, []int{52, 57}) {
+		t.Fatalf("PRNumbers mismatch: %#v", cfg.PRNumbers)
+	}
+	if !reflect.DeepEqual(cfg.SubtreeNums, []int{60}) {
+		t.Fatalf("SubtreeNums mismatch: %#v", cfg.SubtreeNums)
+	}
+	if !reflect.DeepEqual(cfg.StackNumbers, []int{80, 81}) {
+		t.Fatalf("StackNumbers mismatch: %#v", cfg.StackNumbers)
+	}
+
+	selection := cfg.Selection()
+	got := selection.Items
+	want := []app.SelectionItem{
+		{PRNumber: 52, Mode: app.SelectNode},
+		{PRNumber: 57, Mode: app.SelectNode},
+		{PRNumber: 60, Mode: app.SelectSubtree},
+		{PRNumber: 80, Mode: app.SelectStack},
+		{PRNumber: 81, Mode: app.SelectStack},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("selection mismatch\nwant: %#v\n got: %#v", want, got)
+	}
+}
+
+func TestParseListRepeatableStackSelector(t *testing.T) {
+	cfg, err := Parse([]string{"list", "--stack", "52", "--stack", "80"})
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+
+	if !reflect.DeepEqual(cfg.StackNumbers, []int{52, 80}) {
+		t.Fatalf("StackNumbers mismatch: %#v", cfg.StackNumbers)
 	}
 }
 

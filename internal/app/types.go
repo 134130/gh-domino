@@ -40,6 +40,41 @@ type Action struct {
 	DependsOn []string
 }
 
+type SelectionMode string
+
+const (
+	SelectNode    SelectionMode = "node"
+	SelectSubtree SelectionMode = "subtree"
+	SelectStack   SelectionMode = "stack"
+)
+
+type Selection struct {
+	Items []SelectionItem
+}
+
+type SelectionItem struct {
+	PRNumber int
+	Mode     SelectionMode
+}
+
+type SelectionWarningKind string
+
+const (
+	SelectionWarningUnselectedDependency SelectionWarningKind = "unselected_dependency"
+)
+
+type SelectionWarning struct {
+	Kind             SelectionWarningKind
+	PRNumber         int
+	ActionID         string
+	DependencyID     string
+	DependencyPR     int
+	DependencyKind   ActionKind
+	DependencyHead   string
+	DependencyBase   string
+	DependencyReason Reason
+}
+
 type PullStatus struct {
 	PR           gitobj.PullRequest
 	OriginalBase *gitobj.PullRequest
@@ -53,6 +88,7 @@ type Plan struct {
 	Roots    []*stackedpr.Node
 	Pulls    []PullStatus
 	Actions  []Action
+	Warnings []SelectionWarning
 	HeadSHAs map[string]string
 }
 

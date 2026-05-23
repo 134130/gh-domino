@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"strconv"
 
 	"github.com/134130/gh-domino/internal/app"
 	"github.com/134130/gh-domino/internal/output"
@@ -12,11 +13,10 @@ import (
 type Command string
 
 const (
-	CommandLegacy Command = "legacy"
-	CommandTUI    Command = "tui"
-	CommandList   Command = "list"
-	CommandPlan   Command = "plan"
-	CommandMerge  Command = "merge"
+	CommandTUI   Command = "tui"
+	CommandList  Command = "list"
+	CommandPlan  Command = "plan"
+	CommandMerge Command = "merge"
 )
 
 type Config struct {
@@ -29,26 +29,26 @@ type Config struct {
 	Format      output.Format
 	NoColor     bool
 	Verbose     bool
-	DumpTo      string
 
 	State        string
 	Flat         bool
 	IncludeClean bool
-	PRNumber     int
-	StackNumber  int
+	PRNumbers    []int
+	SubtreeNums  []int
+	StackNumbers []int
 
 	Yes         bool
 	DryRun      bool
-	Headless    bool
 	Parallel    int
 	WorktreeDir string
-	RebaseAll   bool
 }
 
 func Parse(args []string) (Config, error) {
 	globalArgs, command, commandArgs := splitCommand(args)
 	if command == "" {
-		return parseLegacy(args)
+		command = CommandTUI
+		globalArgs = args
+		commandArgs = nil
 	}
 
 	cfg := Config{
@@ -86,29 +86,22 @@ func (c Config) PlanOptions() app.PlanOptions {
 	}
 }
 
-func parseLegacy(args []string) (Config, error) {
-	cfg := Config{
-		Command:     CommandLegacy,
-		Remote:      "origin",
-		Author:      "@me",
-		MergedLimit: 30,
-		Format:      output.FormatHuman,
+func (c Config) Selection() app.Selection {
+	items := make([]app.SelectionItem, 0, len(c.PRNumbers)+len(c.SubtreeNums)+len(c.StackNumbers))
+	for _, number := range c.PRNumbers {
+		items = append(items, app.SelectionItem{PRNumber: number, Mode: app.SelectNode})
 	}
+	for _, number := range c.SubtreeNums {
+		items = append(items, app.SelectionItem{PRNumber: number, Mode: app.SelectSubtree})
+	}
+	for _, number := range c.StackNumbers {
+		items = append(items, app.SelectionItem{PRNumber: number, Mode: app.SelectStack})
+	}
+	return app.Selection{Items: items}
+}
 
-	fs := flag.NewFlagSet("gh domino", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	fs.BoolVar(&cfg.Yes, "auto", false, "Enable auto mode")
-	fs.BoolVar(&cfg.DryRun, "dry-run", false, "Don't rebase the changes")
-	fs.StringVar(&cfg.DumpTo, "dump-to", "", "Dump git commands to a file")
-	fs.BoolVar(&cfg.Headless, "headless", false, "Disable UI")
-	fs.BoolVar(&cfg.RebaseAll, "rebase-all", false, "Rebase all open PRs")
-	if err := fs.Parse(args); err != nil {
-		return cfg, err
-	}
-	if cfg.Yes && cfg.DryRun {
-		return cfg, fmt.Errorf("cannot use --auto and --dry-run together")
-	}
-	return cfg, nil
+func (c Config) HasSelection() bool {
+	return len(c.PRNumbers) > 0 || len(c.SubtreeNums) > 0 || len(c.StackNumbers) > 0
 }
 
 func parseGlobal(args []string, cfg *Config) error {
@@ -146,7 +139,7 @@ func parseList(args []string, cfg Config) (Config, error) {
 	addGlobalFlags(fs, &cfg)
 	fs.StringVar(&cfg.State, "state", "all", "Filter state: all, broken, clean, updateable")
 	fs.BoolVar(&cfg.Flat, "flat", false, "Print flat rows instead of a tree")
-	fs.IntVar(&cfg.StackNumber, "stack", 0, "Show only the stack containing this PR")
+	fs.Var((*intListValue)(&cfg.StackNumbers), "stack", "Show only the stack containing this PR; repeatable")
 	jsonFlag := fs.Bool("json", false, "Output JSON")
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
@@ -165,8 +158,9 @@ func parsePlan(args []string, cfg Config) (Config, error) {
 	fs.SetOutput(io.Discard)
 	addGlobalFlags(fs, &cfg)
 	fs.BoolVar(&cfg.IncludeClean, "include-clean", false, "Include update-branch actions for clean PRs")
-	fs.IntVar(&cfg.PRNumber, "pr", 0, "Plan only actions for this PR")
-	fs.IntVar(&cfg.StackNumber, "stack", 0, "Plan actions for the stack containing this PR")
+	fs.Var((*intListValue)(&cfg.PRNumbers), "pr", "Plan actions targeting this PR; repeatable")
+	fs.Var((*intListValue)(&cfg.SubtreeNums), "subtree", "Plan actions for this PR and descendants; repeatable")
+	fs.Var((*intListValue)(&cfg.StackNumbers), "stack", "Plan actions for the stack containing this PR; repeatable")
 	jsonFlag := fs.Bool("json", false, "Output JSON")
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
@@ -184,8 +178,9 @@ func parseMerge(args []string, cfg Config) (Config, error) {
 	fs.BoolVar(&cfg.Yes, "yes", false, "Run without interactive confirmation")
 	fs.BoolVar(&cfg.DryRun, "dry-run", false, "Print action plan without mutating")
 	fs.BoolVar(&cfg.IncludeClean, "include-clean", false, "Include update-branch actions for clean PRs")
-	fs.IntVar(&cfg.PRNumber, "pr", 0, "Execute only actions for this PR")
-	fs.IntVar(&cfg.StackNumber, "stack", 0, "Execute actions for the stack containing this PR")
+	fs.Var((*intListValue)(&cfg.PRNumbers), "pr", "Execute actions targeting this PR; repeatable")
+	fs.Var((*intListValue)(&cfg.SubtreeNums), "subtree", "Execute actions for this PR and descendants; repeatable")
+	fs.Var((*intListValue)(&cfg.StackNumbers), "stack", "Execute actions for the stack containing this PR; repeatable")
 	fs.IntVar(&cfg.Parallel, "parallel", 1, "Max independent stacks to process in parallel")
 	fs.StringVar(&cfg.WorktreeDir, "worktree-dir", "", "Temporary worktree base directory")
 	jsonFlag := fs.Bool("json", false, "Output JSON")
@@ -212,7 +207,6 @@ func addGlobalFlags(fs *flag.FlagSet, cfg *Config) {
 	fs.Var((*formatValue)(&cfg.Format), "format", "Output format: human, json")
 	fs.BoolVar(&cfg.NoColor, "no-color", cfg.NoColor, "Disable ANSI color")
 	fs.BoolVar(&cfg.Verbose, "verbose", cfg.Verbose, "Print command/progress details")
-	fs.StringVar(&cfg.DumpTo, "dump-to", cfg.DumpTo, "Dump git commands to a file")
 }
 
 func splitCommand(args []string) ([]string, Command, []string) {
@@ -260,4 +254,25 @@ func (v *formatValue) Set(value string) error {
 	default:
 		return fmt.Errorf("unsupported format: %s", value)
 	}
+}
+
+type intListValue []int
+
+func (v *intListValue) String() string {
+	if v == nil {
+		return ""
+	}
+	return fmt.Sprint([]int(*v))
+}
+
+func (v *intListValue) Set(value string) error {
+	number, err := strconv.Atoi(value)
+	if err != nil {
+		return fmt.Errorf("invalid number %q: %w", value, err)
+	}
+	if number < 1 {
+		return fmt.Errorf("number must be greater than 0: %d", number)
+	}
+	*v = append(*v, number)
+	return nil
 }

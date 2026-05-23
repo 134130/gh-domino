@@ -50,6 +50,19 @@ func RenderPlan(w io.Writer, plan *app.Plan, format Format) error {
 			return err
 		}
 	}
+	if len(plan.Warnings) > 0 {
+		if _, err := fmt.Fprintln(w, ""); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintln(w, "Warnings"); err != nil {
+			return err
+		}
+		for _, warning := range plan.Warnings {
+			if _, err := fmt.Fprintf(w, "  %s\n", warningLine(warning)); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 
@@ -177,6 +190,40 @@ func actionLine(action app.Action) string {
 	}
 }
 
+func warningLine(warning app.SelectionWarning) string {
+	switch warning.Kind {
+	case app.SelectionWarningUnselectedDependency:
+		if warning.DependencyPR != 0 {
+			return fmt.Sprintf(
+				"#%d has an unselected related action: %s. Use --subtree or --stack to include it.",
+				warning.PRNumber,
+				dependencyActionLine(warning),
+			)
+		}
+		return fmt.Sprintf(
+			"#%d has an unselected related action %s. Use --subtree or --stack to include it.",
+			warning.PRNumber,
+			warning.DependencyID,
+		)
+	default:
+		return fmt.Sprintf("%s for #%d", warning.Kind, warning.PRNumber)
+	}
+}
+
+func dependencyActionLine(warning app.SelectionWarning) string {
+	switch warning.DependencyKind {
+	case app.ActionRepairPR:
+		if warning.DependencyBase != "" {
+			return fmt.Sprintf("repair #%d %s onto %s", warning.DependencyPR, warning.DependencyHead, warning.DependencyBase)
+		}
+		return fmt.Sprintf("repair #%d %s", warning.DependencyPR, warning.DependencyHead)
+	case app.ActionUpdateBranch:
+		return fmt.Sprintf("update-branch #%d %s", warning.DependencyPR, warning.DependencyHead)
+	default:
+		return fmt.Sprintf("%s #%d %s", warning.DependencyKind, warning.DependencyPR, warning.DependencyHead)
+	}
+}
+
 type pullJSON struct {
 	Number       int    `json:"number"`
 	Title        string `json:"title"`
@@ -203,6 +250,18 @@ type actionJSON struct {
 	DependsOn []string `json:"dependsOn,omitempty"`
 }
 
+type warningJSON struct {
+	Kind             string `json:"kind"`
+	PR               int    `json:"pr"`
+	ActionID         string `json:"actionId"`
+	DependencyID     string `json:"dependencyId"`
+	DependencyPR     int    `json:"dependencyPr,omitempty"`
+	DependencyKind   string `json:"dependencyKind,omitempty"`
+	DependencyHead   string `json:"dependencyHead,omitempty"`
+	DependencyBase   string `json:"dependencyBase,omitempty"`
+	DependencyReason string `json:"dependencyReason,omitempty"`
+}
+
 func renderListJSON(w io.Writer, plan *app.Plan) error {
 	return json.NewEncoder(w).Encode(struct {
 		Pulls []pullJSON `json:"pulls"`
@@ -213,9 +272,11 @@ func renderListJSON(w io.Writer, plan *app.Plan) error {
 
 func renderPlanJSON(w io.Writer, plan *app.Plan) error {
 	return json.NewEncoder(w).Encode(struct {
-		Actions []actionJSON `json:"actions"`
+		Actions  []actionJSON  `json:"actions"`
+		Warnings []warningJSON `json:"warnings,omitempty"`
 	}{
-		Actions: actionsJSON(plan.Actions),
+		Actions:  actionsJSON(plan.Actions),
+		Warnings: warningsJSON(plan.Warnings),
 	})
 }
 
@@ -258,6 +319,24 @@ func actionsJSON(actions []app.Action) []actionJSON {
 			Upstream:  action.Upstream,
 			Reason:    string(action.Reason),
 			DependsOn: action.DependsOn,
+		})
+	}
+	return out
+}
+
+func warningsJSON(warnings []app.SelectionWarning) []warningJSON {
+	out := make([]warningJSON, 0, len(warnings))
+	for _, warning := range warnings {
+		out = append(out, warningJSON{
+			Kind:             string(warning.Kind),
+			PR:               warning.PRNumber,
+			ActionID:         warning.ActionID,
+			DependencyID:     warning.DependencyID,
+			DependencyPR:     warning.DependencyPR,
+			DependencyKind:   string(warning.DependencyKind),
+			DependencyHead:   warning.DependencyHead,
+			DependencyBase:   warning.DependencyBase,
+			DependencyReason: string(warning.DependencyReason),
 		})
 	}
 	return out

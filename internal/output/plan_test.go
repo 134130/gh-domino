@@ -32,6 +32,79 @@ func TestRenderPlanHuman(t *testing.T) {
 	}
 }
 
+func TestRenderPlanHumanWarnings(t *testing.T) {
+	plan := &app.Plan{
+		Actions: []app.Action{{
+			ID:      "repair-pr-53",
+			Kind:    app.ActionRepairPR,
+			PR:      pull(53, "baz", "stack-1", "stack-2"),
+			NewBase: "stack-1",
+			Reason:  app.ReasonParentDiverged,
+		}},
+		Warnings: []app.SelectionWarning{{
+			Kind:             app.SelectionWarningUnselectedDependency,
+			PRNumber:         53,
+			ActionID:         "repair-pr-53",
+			DependencyID:     "repair-pr-52",
+			DependencyPR:     52,
+			DependencyKind:   app.ActionRepairPR,
+			DependencyHead:   "stack-1",
+			DependencyBase:   "main",
+			DependencyReason: app.ReasonMergedBase,
+		}},
+	}
+
+	var out strings.Builder
+	if err := RenderPlan(&out, plan, FormatHuman); err != nil {
+		t.Fatalf("RenderPlan returned error: %v", err)
+	}
+
+	want := "Actions\n" +
+		"  repair #53 stack-2 onto stack-1\n" +
+		"\n" +
+		"Warnings\n" +
+		"  #53 has an unselected related action: repair #52 stack-1 onto main. Use --subtree or --stack to include it.\n"
+	if got := out.String(); got != want {
+		t.Fatalf("output mismatch\nwant: %q\n got: %q", want, got)
+	}
+}
+
+func TestRenderPlanJSONWarnings(t *testing.T) {
+	plan := &app.Plan{
+		Actions: []app.Action{{
+			ID:      "repair-pr-53",
+			Kind:    app.ActionRepairPR,
+			PR:      pull(53, "baz", "stack-1", "stack-2"),
+			NewBase: "stack-1",
+			Reason:  app.ReasonParentDiverged,
+		}},
+		Warnings: []app.SelectionWarning{{
+			Kind:         app.SelectionWarningUnselectedDependency,
+			PRNumber:     53,
+			ActionID:     "repair-pr-53",
+			DependencyID: "repair-pr-52",
+			DependencyPR: 52,
+		}},
+	}
+
+	var out strings.Builder
+	if err := RenderPlan(&out, plan, FormatJSON); err != nil {
+		t.Fatalf("RenderPlan returned error: %v", err)
+	}
+
+	got := out.String()
+	for _, want := range []string{
+		`"warnings":[`,
+		`"kind":"unselected_dependency"`,
+		`"dependencyId":"repair-pr-52"`,
+		`"dependencyPr":52`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected output to contain %q, got %q", want, got)
+		}
+	}
+}
+
 func TestRenderListFiltersBrokenWithTreeContext(t *testing.T) {
 	parent := &stackedpr.Node{Value: pull(52, "bar", "main", "stack-1")}
 	child := &stackedpr.Node{Value: pull(53, "baz", "stack-1", "stack-2")}
