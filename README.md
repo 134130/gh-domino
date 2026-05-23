@@ -22,6 +22,16 @@ There are several tools that help manage stacked PRs, but `gh-domino` has some u
 - **No State Management**: It doesn't require any special branch naming conventions or local state files. It works with your existing branches and PRs.
 - **No Additional Descriptions on PRs**: It doesn't require you to add special tags or descriptions to your PRs.
 
+## Design Principles
+
+`gh-domino` treats a stack as a branch graph. GitHub pull request metadata is used to discover each PR's base and head branch, but the repair itself follows normal Git branch semantics.
+
+- A PR's parent is its direct base branch. The tool does not infer hidden ancestors beyond that branch relationship.
+- Selecting a PR does not implicitly select its parent PRs. Exact PR, subtree, and chain selection are explicit scopes.
+- Remote branch refs are the source of truth for planning. Local branches do not need to exist for the stack to be discovered.
+
+See [Scenario-Based Test Plan](./docs/scenario-tests.md) for the behavior matrix that future test harnesses should cover.
+
 ## Installation
 
 ```bash
