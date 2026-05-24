@@ -30,7 +30,7 @@ There are several tools that help manage stacked PRs, but `gh-domino` has some u
 - Selecting a PR does not implicitly select its parent PRs. Exact PR, subtree, and chain selection are explicit scopes.
 - Remote branch refs are the source of truth for planning. Local branches do not need to exist for the stack to be discovered.
 
-See [Scenario-Based Test Plan](./docs/scenario-tests.md) for the behavior matrix that future test harnesses should cover.
+See [Scenario-Based Test Plan](./docs/scenario-tests.md) for the behavior matrix covered by the local `test/harness` scenario tests.
 
 ## Installation
 

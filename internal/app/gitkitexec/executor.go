@@ -131,7 +131,8 @@ func (e Executor) runSequential(ctx context.Context, result *app.RunResult, acti
 		skipReason := ""
 		for _, dependencyID := range action.DependsOn {
 			if _, selected := selectedIDs[dependencyID]; !selected {
-				continue
+				skipReason = fmt.Sprintf("dependency %s was not selected", dependencyID)
+				break
 			}
 			if resultsByID[dependencyID] != app.ActionStatusSuccess {
 				skipReason = fmt.Sprintf("dependency %s did not succeed", dependencyID)

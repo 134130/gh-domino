@@ -1,9 +1,8 @@
 # Scenario-Based Test Plan
 
-This document captures behavior scenarios for future test harness work. It is
-not tied to a specific test framework. Each scenario should eventually become a
-fixture-backed test that can assert the plan, commands, repository state, and
-GitHub pull request updates.
+This document captures behavior scenarios for `test/harness`. The harness uses
+a real local Git remote/worktree for Git behavior and a narrow fake GitHub pull
+request state for PR metadata and base updates.
 
 ## Core Model
 
