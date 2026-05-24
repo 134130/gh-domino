@@ -42,23 +42,31 @@ func newCommand(stdout, stderr io.Writer, handler commandHandler) *cobra.Command
 		}
 	}
 
+	validateTUI := func(cfg Config) error {
+		if cfg.Parallel < 1 {
+			return errParallelMustBePositive()
+		}
+		return nil
+	}
+
 	root := &cobra.Command{
 		Use:           "gh domino",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Args:          cobra.NoArgs,
-		RunE:          run(CommandTUI, nil),
+		RunE:          run(CommandTUI, validateTUI),
 	}
 	root.SetOut(stdout)
 	root.SetErr(stderr)
 	addGlobalFlags(root, &cfg, &jsonFlag)
+	addTUIFlags(root, &cfg)
 
 	tuiCmd := &cobra.Command{
 		Use:  "tui",
 		Args: cobra.NoArgs,
-		RunE: run(CommandTUI, nil),
+		RunE: run(CommandTUI, validateTUI),
 	}
-	tuiCmd.Flags().BoolVar(&cfg.IncludeClean, "include-clean", false, "Allow update-branch actions for clean PRs")
+	addTUIFlags(tuiCmd, &cfg)
 
 	listState := "all"
 	listCmd := &cobra.Command{
@@ -129,4 +137,9 @@ func addSelectionFlags(cmd *cobra.Command, cfg *Config, verb string) {
 	cmd.Flags().Var((*intListValue)(&cfg.PRNumbers), "pr", verb+" actions targeting this PR; repeatable")
 	cmd.Flags().Var((*intListValue)(&cfg.SubtreeNums), "subtree", verb+" actions for this PR and descendants; repeatable")
 	cmd.Flags().Var((*intListValue)(&cfg.ChainNumbers), "chain", verb+" actions from the root PR to this PR; repeatable")
+}
+
+func addTUIFlags(cmd *cobra.Command, cfg *Config) {
+	cmd.Flags().BoolVar(&cfg.IncludeClean, "include-clean", false, "Start with clean PR update actions included")
+	cmd.Flags().IntVar(&cfg.Parallel, "parallel", cfg.Parallel, "Initial max independent stacks to process in parallel")
 }

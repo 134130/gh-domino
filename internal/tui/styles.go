@@ -3,8 +3,8 @@ package tui
 import (
 	"image/color"
 
-	"github.com/134130/gh-domino/gitobj"
 	"charm.land/lipgloss/v2"
+	"github.com/134130/gh-domino/gitobj"
 )
 
 func cursorBg(isDark bool) color.Color {
@@ -15,36 +15,33 @@ func cursorBg(isDark bool) color.Color {
 }
 
 var (
-	titleStyle      = lipgloss.NewStyle().Bold(true)
-	statusBarStyle    = lipgloss.NewStyle()
-	statusBarKeyStyle = lipgloss.NewStyle().Bold(true)
-	brokenStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Bold(true) // ANSI yellow + bold
-	okStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Bold(true) // ANSI green + bold
-	boldStyle       = lipgloss.NewStyle().Bold(true)
-	baseBranchStyle = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(6)) // cyan (matches color.Cyan)
-	headBranchStyle = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(4)) // blue (matches color.Blue)
+	titleStyle   = lipgloss.NewStyle().Bold(true)
+	metaStyle    = lipgloss.NewStyle().Faint(true)
+	dimStyle     = lipgloss.NewStyle().Faint(true)
+	selectedMark = lipgloss.NewStyle().Bold(true)
+
+	repairStyle    = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(3)).Bold(true)
+	dependentStyle = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(3)).Bold(true)
+	updateStyle    = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(3)).Bold(true)
+	warningStyle   = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(3)).Bold(true)
+	cleanStyle     = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(2)).Bold(true)
+	mergedStyle    = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(5)).Bold(true)
+
+	baseBranchStyle = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(6))
+	headBranchStyle = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(4))
 )
 
-const (
-	checkboxSelected   = "■"
-	checkboxUnselected = "□"
-	brokenIndicator    = "!" // rendered with brokenStyle
-	okIndicator        = "✔" // rendered with okStyle
-)
-
-// prNumLipglossStyle returns the bold lipgloss style for a PR number based on its state.
-// Callers can chain .Background(...) for cursor rows.
-func prNumLipglossStyle(pr gitobj.PullRequest) lipgloss.Style {
+func prNumberStyle(pr gitobj.PullRequest) lipgloss.Style {
 	if pr.IsDraft {
-		return lipgloss.NewStyle().Bold(true).Foreground(lipgloss.ANSIColor(7)) // grey
+		return lipgloss.NewStyle().Bold(true).Foreground(lipgloss.ANSIColor(7))
 	}
 	switch pr.State {
 	case gitobj.PullRequestStateOpen:
-		return lipgloss.NewStyle().Bold(true).Foreground(lipgloss.ANSIColor(2)) // green
+		return lipgloss.NewStyle().Bold(true).Foreground(lipgloss.ANSIColor(2))
 	case gitobj.PullRequestStateClosed:
-		return lipgloss.NewStyle().Bold(true).Foreground(lipgloss.ANSIColor(1)) // red
+		return lipgloss.NewStyle().Bold(true).Foreground(lipgloss.ANSIColor(1))
 	case gitobj.PullRequestStateMerged:
-		return lipgloss.NewStyle().Bold(true).Foreground(lipgloss.ANSIColor(5)) // purple
+		return lipgloss.NewStyle().Bold(true).Foreground(lipgloss.ANSIColor(5))
 	default:
 		return lipgloss.NewStyle().Bold(true)
 	}

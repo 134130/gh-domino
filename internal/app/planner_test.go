@@ -36,7 +36,7 @@ func TestPlannerBuildsRepairActionsForMergedBaseStack(t *testing.T) {
 	got := actionSummaries(plan.Actions)
 	want := []string{
 		"repair-pr-52 repair_pr #52 base=main upstream= depends=[] reason=merged_base",
-		"repair-pr-53 repair_pr #53 base=stack-2 upstream= depends=[repair-pr-52] reason=parent_diverged",
+		"repair-pr-53 repair_pr #53 base=stack-2 upstream= depends=[repair-pr-52] reason=parent_will_change",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("actions mismatch\nwant: %#v\n got: %#v", want, got)

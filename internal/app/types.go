@@ -18,11 +18,12 @@ const (
 type Reason string
 
 const (
-	ReasonNone           Reason = ""
-	ReasonMergedBase     Reason = "merged_base"
-	ReasonParentDiverged Reason = "parent_diverged"
-	ReasonMergedAncestor Reason = "merged_ancestor"
-	ReasonRebaseAll      Reason = "rebase_all"
+	ReasonNone             Reason = ""
+	ReasonMergedBase       Reason = "merged_base"
+	ReasonParentDiverged   Reason = "parent_diverged"
+	ReasonParentWillChange Reason = "parent_will_change"
+	ReasonMergedAncestor   Reason = "merged_ancestor"
+	ReasonRebaseAll        Reason = "rebase_all"
 )
 
 type ActionKind string
@@ -79,6 +80,7 @@ const (
 )
 
 type Selection struct {
+	None  bool
 	Items []SelectionItem
 }
 

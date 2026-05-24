@@ -242,7 +242,7 @@ func (p Planner) determinePRState(
 	}
 
 	if parentPR, ok := prByHead[pr.BaseRefName]; ok && projectedRebased[parentPR.HeadRefName] {
-		return true, ReasonParentDiverged, "", "", nil
+		return true, ReasonParentWillChange, "", "", nil
 	}
 
 	defaultBranch, err := p.store.DefaultBranch(ctx, opts.Remote)

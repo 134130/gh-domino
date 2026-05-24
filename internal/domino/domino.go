@@ -4,20 +4,22 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sync"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/134130/gh-domino/git"
 	"github.com/134130/gh-domino/gitobj"
+	"github.com/134130/gh-domino/internal/app"
+	"github.com/134130/gh-domino/internal/app/gitkitexec"
+	"github.com/134130/gh-domino/internal/app/gitkitstore"
 	"github.com/134130/gh-domino/internal/color"
+	"github.com/134130/gh-domino/internal/output"
 	"github.com/134130/gh-domino/internal/spinner"
 	"github.com/134130/gh-domino/internal/stackedpr"
 	"github.com/134130/gh-domino/internal/tui"
 	"github.com/134130/gh-domino/internal/ui"
 	"github.com/134130/gh-domino/internal/util"
-	"golang.org/x/sync/errgroup"
+	"github.com/134130/gitkit/gitcmd"
 )
 
 var write = func(msg string, args ...interface{}) {}
@@ -28,18 +30,6 @@ func success(msg string) {
 
 func failure(msg string) {
 	write("%s %s\n", color.Red("✘"), msg)
-}
-
-// syncWriter wraps an io.Writer with a mutex to prevent interleaved output.
-type syncWriter struct {
-	mu sync.Mutex
-	w  interface{ Write([]byte) (int, error) }
-}
-
-func (sw *syncWriter) Write(p []byte) (int, error) {
-	sw.mu.Lock()
-	defer sw.mu.Unlock()
-	return sw.w.Write(p)
 }
 
 func Run(ctx context.Context, cfg Config) error {
@@ -352,39 +342,6 @@ func determinePRState(
 	return false, "", "", nil
 }
 
-// rebaseWithWorktree creates a temporary worktree (if wtBaseDir is set), runs HandleBrokenPR,
-// and cleans up the worktree afterward.
-func rebaseWithWorktree(
-	ctx context.Context,
-	brokenPR stackedpr.RebaseInfo,
-	cfg Config,
-	prHeadShas map[string]string,
-	wtBaseDir string,
-	prHeadShasMu ...*sync.Mutex,
-) error {
-	var mods []git.CommandModifier
-	var wtPath string
-
-	if wtBaseDir != "" && !cfg.DryRun {
-		wtPath = filepath.Join(wtBaseDir, brokenPR.PR.HeadRefName)
-		if err := git.WorktreeAdd(ctx, wtPath, brokenPR.PR.HeadRefName); err != nil {
-			return fmt.Errorf("create worktree for %s: %w", brokenPR.PR.HeadRefName, err)
-		}
-		defer func() {
-			_ = git.WorktreeRemove(ctx, wtPath)
-			_ = os.RemoveAll(wtPath)
-		}()
-		mods = append(mods, git.WithWorkDir(wtPath))
-	}
-
-	var mu *sync.Mutex
-	if len(prHeadShasMu) > 0 {
-		mu = prHeadShasMu[0]
-	}
-
-	return HandleBrokenPR(ctx, brokenPR, cfg, prHeadShas, mu, mods...)
-}
-
 // HandleBrokenPR performs the necessary actions on a broken PR, such as rebasing,
 // pushing, and updating the base branch on the remote. It handles both dry-run and real modes.
 func HandleBrokenPR(
@@ -503,168 +460,51 @@ func HandleBrokenPR(
 	return nil
 }
 
-// groupByStack groups a flat RebaseQueue into per-stack slices using the dependency tree.
-// Within each stack, items are in DFS order (parent before child).
-func groupByStack(roots []*stackedpr.Node, queue []stackedpr.RebaseInfo) [][]stackedpr.RebaseInfo {
-	inQueue := make(map[int]stackedpr.RebaseInfo, len(queue))
-	for _, info := range queue {
-		inQueue[info.PR.Number] = info
-	}
-	var stacks [][]stackedpr.RebaseInfo
-	for _, root := range roots {
-		var stack []stackedpr.RebaseInfo
-		collectFromTree(root, inQueue, &stack)
-		if len(stack) > 0 {
-			stacks = append(stacks, stack)
-		}
-	}
-	return stacks
-}
-
-func collectFromTree(node *stackedpr.Node, inQueue map[int]stackedpr.RebaseInfo, stack *[]stackedpr.RebaseInfo) {
-	if info, ok := inQueue[node.Value.Number]; ok {
-		*stack = append(*stack, info)
-	}
-	for _, child := range node.Children {
-		collectFromTree(child, inQueue, stack)
-	}
-}
-
-// runInteractive runs the v2 interactive TUI selection flow.
-// Phase 1: bubbletea TUI for loading + PR selection (alt screen).
-// Phase 2: rebase selected PRs using worktrees, parallel across independent stacks.
+// runInteractive is kept for the legacy internal/domino entry point, but it now
+// uses the same app.Plan-centered selector and gitkit executor as the v3 CLI.
 func runInteractive(ctx context.Context, cancel context.CancelFunc, cfg Config) error {
-	loadFn := func(ctx context.Context) (*tui.LoadResult, error) {
-		if err := git.Fetch(ctx, "origin"); err != nil {
-			return nil, fmt.Errorf("fetch origin: %w", err)
-		}
-
-		prs, err := git.ListPullRequests(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("list pull requests: %w", err)
-		}
-
-		mergedPRs, err := git.ListMergedPullRequests(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("list merged pull requests: %w", err)
-		}
-
-		prHeadShas := make(map[string]string)
-		for _, pr := range prs {
-			sha, err := git.RevParse(ctx, "origin/"+pr.HeadRefName)
-			if err != nil {
-				return nil, fmt.Errorf("could not get SHA for %s: %w", pr.HeadRefName, err)
-			}
-			prHeadShas[pr.HeadRefName] = sha
-		}
-
-		roots, err := stackedpr.BuildDependencyTree(ctx, prs, mergedPRs, prHeadShas)
-		if err != nil {
-			return nil, err
-		}
-
-		// Build lookup maps for determinePRState
-		prMap := make(map[string]gitobj.PullRequest)
-		for _, pr := range prs {
-			prMap[pr.HeadRefName] = pr
-		}
-		mergedByHead := make(map[string]gitobj.PullRequest)
-		for _, pr := range mergedPRs {
-			mergedByHead[pr.HeadRefName] = pr
-		}
-
-		// Pre-compute broken status for every PR in the tree
-		statuses := make(map[int]tui.PRStatus)
-		var walkStatuses func(node *stackedpr.Node)
-		walkStatuses = func(node *stackedpr.Node) {
-			isBroken, newBase, upstream, err := determinePRState(
-				ctx, node.Value, node.OriginalBase,
-				prMap, mergedByHead, prHeadShas,
-				Config{DryRun: false}, mergedPRs,
-			)
-			if err == nil {
-				statuses[node.Value.Number] = tui.PRStatus{
-					Broken:   isBroken,
-					NewBase:  newBase,
-					Upstream: upstream,
-				}
-			}
-			for _, child := range node.Children {
-				walkStatuses(child)
-			}
-		}
-		for _, root := range roots {
-			walkStatuses(root)
-		}
-
-		return &tui.LoadResult{
-			Roots:      roots,
-			Statuses:   statuses,
-			PrHeadShas: prHeadShas,
-		}, nil
+	build := func(ctx context.Context, includeClean bool) (*app.Plan, error) {
+		store := gitkitstore.New(gitcmd.NewRunner())
+		return app.NewPlanner(store).BuildPlan(ctx, app.PlanOptions{
+			Remote:       "origin",
+			Author:       "@me",
+			MergedLimit:  30,
+			IncludeClean: includeClean,
+		})
 	}
 
-	result, err := tui.RunSelector(ctx, cancel, loadFn)
+	plan, err := build(ctx, cfg.RebaseAll)
 	if err != nil {
+		cancel()
 		return err
 	}
-	if result == nil || (len(result.RebaseQueue) == 0 && len(result.UpdateBranchNums) == 0) {
-		success("No PRs selected for rebase.")
+
+	result, err := tui.RunSelector(ctx, plan, tui.Options{
+		IncludeClean: cfg.RebaseAll,
+		Parallel:     1,
+		LoadPlan:     build,
+		Output:       cfg.Writer,
+	})
+	if err != nil {
+		cancel()
+		return err
+	}
+	if result == nil {
+		cancel()
 		return nil
 	}
 
-	// Rebase broken PRs: parallel across independent stacks, worktree per PR.
-	if len(result.RebaseQueue) > 0 {
-		sw := &syncWriter{w: cfg.Writer}
-		autoCfg := cfg
-		autoCfg.Auto = true
-		autoCfg.Writer = sw
-		write = func(msg string, args ...interface{}) {
-			_, _ = fmt.Fprintf(sw, msg, args...)
-		}
-
-		wtBaseDir := filepath.Join(os.TempDir(), "gh-domino-wt")
-		_ = os.MkdirAll(wtBaseDir, 0755)
-		defer func() {
-			_ = os.RemoveAll(wtBaseDir)
-		}()
-
-		stacks := groupByStack(result.Roots, result.RebaseQueue)
-		var mu sync.Mutex
-		g, gctx := errgroup.WithContext(ctx)
-		stackErrs := make([]error, len(stacks))
-
-		for i, stack := range stacks {
-			i, stack := i, stack
-			g.Go(func() error {
-				for _, info := range stack {
-					if err := rebaseWithWorktree(gctx, info, autoCfg, result.PrHeadShas, wtBaseDir, &mu); err != nil {
-						stackErrs[i] = err
-						return nil // don't cancel other stacks
-					}
-				}
-				return nil
-			})
-		}
-		_ = g.Wait()
-
-		for _, err := range stackErrs {
-			if err != nil {
-				reportError(err)
-			}
+	executor := gitkitexec.New(gitcmd.NewRunner())
+	runResult, err := executor.Execute(ctx, result.Plan, app.ExecuteOptions{
+		Remote:   "origin",
+		Parallel: result.Parallel,
+	})
+	if runResult != nil {
+		if renderErr := output.RenderRunResult(cfg.Writer, runResult, output.FormatHuman); renderErr != nil {
+			cancel()
+			return renderErr
 		}
 	}
-
-	// Update non-broken PRs via GitHub API (sequential).
-	for _, prNum := range result.UpdateBranchNums {
-		msg := fmt.Sprintf("Updating branch of #%d...", prNum)
-		if err := spinner.New(msg, cfg.Writer).Run(func() error {
-			return git.UpdateBranch(ctx, prNum)
-		}); err != nil {
-			failure(fmt.Sprintf("Failed to update branch for PR #%d: %v", prNum, err))
-			return nil
-		}
-		success(msg)
-	}
-	return nil
+	cancel()
+	return err
 }

@@ -25,6 +25,22 @@ func TestPlanSelectEmptySelectionSelectsAllActions(t *testing.T) {
 	}
 }
 
+func TestPlanSelectNoneSelectsNoActions(t *testing.T) {
+	plan := selectionTestPlan()
+
+	selected, err := plan.Select(Selection{None: true})
+	if err != nil {
+		t.Fatalf("Select returned error: %v", err)
+	}
+
+	if len(selected.Actions) != 0 {
+		t.Fatalf("expected no actions, got %#v", selected.Actions)
+	}
+	if len(selected.Warnings) != 0 {
+		t.Fatalf("expected no warnings, got %#v", selected.Warnings)
+	}
+}
+
 func TestPlanSelectNodeDoesNotIncludeDependencies(t *testing.T) {
 	plan := selectionTestPlan()
 

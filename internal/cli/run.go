@@ -9,7 +9,14 @@ import (
 	"github.com/134130/gh-domino/internal/app/gitkitexec"
 	"github.com/134130/gh-domino/internal/app/gitkitstore"
 	"github.com/134130/gh-domino/internal/output"
+	"github.com/134130/gh-domino/internal/tui"
 	"github.com/134130/gitkit/gitcmd"
+)
+
+var (
+	buildPlanFunc       = buildPlan
+	runSelectorFunc     = tui.RunSelector
+	executeSelectedFunc = executeSelectedPlan
 )
 
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
@@ -33,8 +40,31 @@ func runConfig(ctx context.Context, cfg Config, stdout, stderr io.Writer) error 
 	}
 }
 
-func runTUI(context.Context, Config, io.Writer, io.Writer) error {
-	return fmt.Errorf("tui is not implemented yet; use `gh domino list` or `gh domino plan`")
+func runTUI(ctx context.Context, cfg Config, stdout, _ io.Writer) error {
+	plan, err := buildPlanFunc(ctx, cfg)
+	if err != nil {
+		return err
+	}
+
+	loadPlan := func(ctx context.Context, includeClean bool) (*app.Plan, error) {
+		next := cfg
+		next.IncludeClean = includeClean
+		return buildPlanFunc(ctx, next)
+	}
+
+	result, err := runSelectorFunc(ctx, plan, tui.Options{
+		IncludeClean: cfg.IncludeClean,
+		Parallel:     cfg.Parallel,
+		LoadPlan:     loadPlan,
+		Output:       stdout,
+	})
+	if err != nil {
+		return err
+	}
+	if result == nil {
+		return nil
+	}
+	return executeSelectedFunc(ctx, cfg, result.Plan, result.Parallel, stdout)
 }
 
 func runList(ctx context.Context, cfg Config, stdout io.Writer) error {
@@ -78,11 +108,15 @@ func runMerge(ctx context.Context, cfg Config, stdout io.Writer) error {
 		return err
 	}
 
+	return executeSelectedFunc(ctx, cfg, plan, cfg.Parallel, stdout)
+}
+
+func executeSelectedPlan(ctx context.Context, cfg Config, plan *app.Plan, parallel int, stdout io.Writer) error {
 	runner := gitcmd.NewRunner()
 	executor := gitkitexec.New(runner)
 	result, err := executor.Execute(ctx, plan, app.ExecuteOptions{
 		Remote:   cfg.Remote,
-		Parallel: cfg.Parallel,
+		Parallel: parallel,
 	})
 	if result != nil {
 		if renderErr := output.RenderRunResult(stdout, result, cfg.Format); renderErr != nil {

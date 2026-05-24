@@ -12,6 +12,13 @@ func (p *Plan) Select(selection Selection) (*Plan, error) {
 		return nil, fmt.Errorf("plan is nil")
 	}
 
+	if selection.None {
+		selected := p.clone()
+		selected.Actions = nil
+		selected.Warnings = nil
+		return selected, nil
+	}
+
 	if len(selection.Items) == 0 {
 		selected := p.clone()
 		selected.Warnings = selectionWarnings(selected.Actions, p.Actions)
