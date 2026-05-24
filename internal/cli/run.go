@@ -6,6 +6,7 @@ import (
 	"io"
 
 	"github.com/134130/gh-domino/internal/app"
+	"github.com/134130/gh-domino/internal/app/gitkitexec"
 	"github.com/134130/gh-domino/internal/app/gitkitstore"
 	"github.com/134130/gh-domino/internal/output"
 	"github.com/134130/gitkit/gitcmd"
@@ -63,7 +64,32 @@ func runMerge(ctx context.Context, cfg Config, stdout io.Writer) error {
 	if cfg.DryRun {
 		return runPlan(ctx, cfg, stdout)
 	}
-	return fmt.Errorf("merge execution is not implemented yet; use `gh domino plan` or `gh domino merge --dry-run`")
+	if !cfg.Yes {
+		return fmt.Errorf("merge requires --yes until TUI confirmation is implemented")
+	}
+
+	plan, err := buildPlan(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	plan, err = plan.Select(cfg.Selection())
+	if err != nil {
+		return err
+	}
+
+	runner := gitcmd.NewRunner()
+	executor := gitkitexec.New(runner)
+	result, err := executor.Execute(ctx, plan, app.ExecuteOptions{
+		Remote:      cfg.Remote,
+		Parallel:    cfg.Parallel,
+		WorktreeDir: cfg.WorktreeDir,
+	})
+	if result != nil {
+		if renderErr := output.RenderRunResult(stdout, result, cfg.Format); renderErr != nil {
+			return renderErr
+		}
+	}
+	return err
 }
 
 func buildPlan(ctx context.Context, cfg Config) (*app.Plan, error) {

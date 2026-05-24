@@ -105,6 +105,71 @@ func TestRenderPlanJSONWarnings(t *testing.T) {
 	}
 }
 
+func TestRenderRunResultHuman(t *testing.T) {
+	result := &app.RunResult{
+		Actions: []app.ActionResult{{
+			Action: app.Action{
+				ID:      "repair-pr-52",
+				Kind:    app.ActionRepairPR,
+				PR:      pull(52, "bar", "stack-1", "stack-2"),
+				NewBase: "main",
+			},
+			Status: app.ActionStatusSuccess,
+		}, {
+			Action: app.Action{
+				ID:   "update-branch-53",
+				Kind: app.ActionUpdateBranch,
+				PR:   pull(53, "baz", "main", "topic"),
+			},
+			Status: app.ActionStatusFailed,
+			Error:  "update failed",
+		}},
+	}
+
+	var out strings.Builder
+	if err := RenderRunResult(&out, result, FormatHuman); err != nil {
+		t.Fatalf("RenderRunResult returned error: %v", err)
+	}
+
+	want := "Results\n" +
+		"  success repair #52 stack-2 onto main\n" +
+		"  failed update-branch #53 topic: update failed\n"
+	if got := out.String(); got != want {
+		t.Fatalf("output mismatch\nwant: %q\n got: %q", want, got)
+	}
+}
+
+func TestRenderRunResultJSON(t *testing.T) {
+	result := &app.RunResult{
+		Actions: []app.ActionResult{{
+			Action: app.Action{
+				ID:      "repair-pr-52",
+				Kind:    app.ActionRepairPR,
+				PR:      pull(52, "bar", "stack-1", "stack-2"),
+				NewBase: "main",
+			},
+			Status: app.ActionStatusFailed,
+			Error:  "rebase conflict",
+		}},
+	}
+
+	var out strings.Builder
+	if err := RenderRunResult(&out, result, FormatJSON); err != nil {
+		t.Fatalf("RenderRunResult returned error: %v", err)
+	}
+
+	got := out.String()
+	for _, want := range []string{
+		`"id":"repair-pr-52"`,
+		`"status":"failed"`,
+		`"error":"rebase conflict"`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected output to contain %q, got %q", want, got)
+		}
+	}
+}
+
 func TestRenderListFiltersBrokenWithTreeContext(t *testing.T) {
 	parent := &stackedpr.Node{Value: pull(52, "bar", "main", "stack-1")}
 	child := &stackedpr.Node{Value: pull(53, "baz", "stack-1", "stack-2")}

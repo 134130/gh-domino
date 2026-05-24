@@ -66,6 +66,44 @@ func RenderPlan(w io.Writer, plan *app.Plan, format Format) error {
 	return nil
 }
 
+func RenderRunResult(w io.Writer, result *app.RunResult, format Format) error {
+	if format == FormatJSON {
+		return renderRunResultJSON(w, result)
+	}
+
+	if _, err := fmt.Fprintln(w, "Results"); err != nil {
+		return err
+	}
+	if len(result.Actions) == 0 {
+		if _, err := fmt.Fprintln(w, "  No actions."); err != nil {
+			return err
+		}
+	}
+	for _, action := range result.Actions {
+		line := fmt.Sprintf("%s %s", action.Status, actionLine(action.Action))
+		if action.Error != "" {
+			line += ": " + action.Error
+		}
+		if _, err := fmt.Fprintf(w, "  %s\n", line); err != nil {
+			return err
+		}
+	}
+	if len(result.Warnings) > 0 {
+		if _, err := fmt.Fprintln(w, ""); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintln(w, "Warnings"); err != nil {
+			return err
+		}
+		for _, warning := range result.Warnings {
+			if _, err := fmt.Fprintf(w, "  %s\n", warningLine(warning)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func renderListTree(w io.Writer, plan *app.Plan, state string) error {
 	statuses := statusesByPR(plan.Pulls)
 	if _, err := fmt.Fprintln(w, "Pull Requests"); err != nil {
@@ -250,6 +288,18 @@ type actionJSON struct {
 	DependsOn []string `json:"dependsOn,omitempty"`
 }
 
+type actionResultJSON struct {
+	ID       string `json:"id"`
+	Kind     string `json:"kind"`
+	PR       int    `json:"pr"`
+	Head     string `json:"head"`
+	NewBase  string `json:"newBase,omitempty"`
+	Upstream string `json:"upstream,omitempty"`
+	Reason   string `json:"reason,omitempty"`
+	Status   string `json:"status"`
+	Error    string `json:"error,omitempty"`
+}
+
 type warningJSON struct {
 	Kind             string `json:"kind"`
 	PR               int    `json:"pr"`
@@ -277,6 +327,16 @@ func renderPlanJSON(w io.Writer, plan *app.Plan) error {
 	}{
 		Actions:  actionsJSON(plan.Actions),
 		Warnings: warningsJSON(plan.Warnings),
+	})
+}
+
+func renderRunResultJSON(w io.Writer, result *app.RunResult) error {
+	return json.NewEncoder(w).Encode(struct {
+		Actions  []actionResultJSON `json:"actions"`
+		Warnings []warningJSON      `json:"warnings,omitempty"`
+	}{
+		Actions:  actionResultsJSON(result.Actions),
+		Warnings: warningsJSON(result.Warnings),
 	})
 }
 
@@ -319,6 +379,25 @@ func actionsJSON(actions []app.Action) []actionJSON {
 			Upstream:  action.Upstream,
 			Reason:    string(action.Reason),
 			DependsOn: action.DependsOn,
+		})
+	}
+	return out
+}
+
+func actionResultsJSON(results []app.ActionResult) []actionResultJSON {
+	out := make([]actionResultJSON, 0, len(results))
+	for _, result := range results {
+		action := result.Action
+		out = append(out, actionResultJSON{
+			ID:       action.ID,
+			Kind:     string(action.Kind),
+			PR:       action.PR.Number,
+			Head:     action.PR.HeadRefName,
+			NewBase:  action.NewBase,
+			Upstream: action.Upstream,
+			Reason:   string(action.Reason),
+			Status:   string(result.Status),
+			Error:    result.Error,
 		})
 	}
 	return out

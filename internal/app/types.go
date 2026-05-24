@@ -1,6 +1,8 @@
 package app
 
 import (
+	"context"
+
 	"github.com/134130/gh-domino/gitobj"
 	"github.com/134130/gh-domino/internal/stackedpr"
 )
@@ -38,6 +40,35 @@ type Action struct {
 	Upstream  string
 	Reason    Reason
 	DependsOn []string
+}
+
+type ExecuteOptions struct {
+	Remote      string
+	Parallel    int
+	WorktreeDir string
+}
+
+type ActionStatus string
+
+const (
+	ActionStatusSuccess ActionStatus = "success"
+	ActionStatusFailed  ActionStatus = "failed"
+	ActionStatusSkipped ActionStatus = "skipped"
+)
+
+type ActionResult struct {
+	Action Action
+	Status ActionStatus
+	Error  string
+}
+
+type RunResult struct {
+	Actions  []ActionResult
+	Warnings []SelectionWarning
+}
+
+type Executor interface {
+	Execute(ctx context.Context, plan *Plan, opts ExecuteOptions) (*RunResult, error)
 }
 
 type SelectionMode string
