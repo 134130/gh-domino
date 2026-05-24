@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -78,7 +79,7 @@ func (h *Harness) Store() Store {
 	return Store{
 		state:   h.state,
 		workDir: h.WorkDir,
-		git:     gitrepo.New(gitcmd.NewRunner(), gitrepo.WithDir(h.WorkDir)),
+		git:     gitrepo.New(h.Runner(), gitrepo.WithDir(h.WorkDir)),
 	}
 }
 
@@ -275,6 +276,7 @@ func (h *Harness) git(dir string, args ...string) {
 func runGit(ctx context.Context, dir string, args ...string) (string, string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
+	cmd.Env = sanitizedEnv()
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -473,7 +475,6 @@ func (pr PR) GitObject() gitobj.PullRequest {
 type Runner struct {
 	workDir string
 	state   *State
-	git     *gitcmd.DefaultRunner
 
 	mu       sync.Mutex
 	commands []gitcmd.Command
@@ -483,7 +484,6 @@ func NewRunner(workDir string, state *State) *Runner {
 	return &Runner{
 		workDir: workDir,
 		state:   state,
-		git:     gitcmd.NewRunner(),
 	}
 }
 
@@ -495,7 +495,7 @@ func (r *Runner) Run(ctx context.Context, cmd gitcmd.Command) (gitcmd.Result, er
 	if cmd.Program == gitcmd.ProgramGH {
 		return r.runGH(ctx, cmd)
 	}
-	return r.git.Run(ctx, cmd)
+	return runGitCommand(ctx, cmd)
 }
 
 func (r *Runner) Start(ctx context.Context, cmd gitcmd.Command) (gitcmd.Process, error) {
@@ -505,7 +505,8 @@ func (r *Runner) Start(ctx context.Context, cmd gitcmd.Command) (gitcmd.Process,
 		result, err := r.runGH(ctx, cmd)
 		return completedProcess{result: result, err: err}, nil
 	}
-	return r.git.Start(ctx, cmd)
+	result, err := runGitCommand(ctx, cmd)
+	return completedProcess{result: result, err: err}, nil
 }
 
 func (r *Runner) Commands() []gitcmd.Command {
@@ -577,6 +578,56 @@ func (r *Runner) updateBranch(ctx context.Context, dir string, number int) error
 		}
 	}
 	return nil
+}
+
+func runGitCommand(ctx context.Context, cmd gitcmd.Command) (gitcmd.Result, error) {
+	execCmd := exec.CommandContext(ctx, "git", cmd.Args...)
+	execCmd.Dir = cmd.Dir
+	execCmd.Env = sanitizedEnv(cmd.Env...)
+	execCmd.Stdin = cmd.Stdin
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	execCmd.Stdout = stdout
+	execCmd.Stderr = stderr
+	if cmd.Stdout != nil {
+		execCmd.Stdout = io.MultiWriter(stdout, cmd.Stdout)
+	}
+	if cmd.Stderr != nil {
+		execCmd.Stderr = io.MultiWriter(stderr, cmd.Stderr)
+	}
+
+	err := execCmd.Run()
+	result := gitcmd.Result{
+		Command: cmd,
+		Stdout:  stdout.Bytes(),
+		Stderr:  stderr.Bytes(),
+	}
+	if err == nil {
+		return result, nil
+	}
+	result.ExitCode = 1
+	if exitError, ok := err.(*exec.ExitError); ok {
+		result.ExitCode = exitError.ExitCode()
+	}
+	return result, &gitcmd.ExitError{Result: result, Err: err}
+}
+
+func sanitizedEnv(extra ...string) []string {
+	blocked := map[string]struct{}{
+		"GIT_DIR":        {},
+		"GIT_INDEX_FILE": {},
+		"GIT_WORK_TREE":  {},
+	}
+	env := make([]string, 0, len(os.Environ())+len(extra))
+	for _, entry := range os.Environ() {
+		key, _, _ := strings.Cut(entry, "=")
+		if _, ok := blocked[key]; ok {
+			continue
+		}
+		env = append(env, entry)
+	}
+	return append(env, extra...)
 }
 
 func exitResult(cmd gitcmd.Command, err error) (gitcmd.Result, error) {

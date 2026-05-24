@@ -43,9 +43,8 @@ type Action struct {
 }
 
 type ExecuteOptions struct {
-	Remote      string
-	Parallel    int
-	WorktreeDir string
+	Remote   string
+	Parallel int
 }
 
 type ActionStatus string

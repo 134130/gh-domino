@@ -1,0 +1,132 @@
+package cli
+
+import (
+	"context"
+	"io"
+
+	"github.com/134130/gh-domino/internal/output"
+	"github.com/spf13/cobra"
+)
+
+type commandHandler func(context.Context, Config, io.Writer, io.Writer) error
+
+func Parse(args []string) (Config, error) {
+	var parsed Config
+	cmd := newCommand(io.Discard, io.Discard, func(_ context.Context, cfg Config, _, _ io.Writer) error {
+		parsed = cfg
+		return nil
+	})
+	cmd.SetArgs(args)
+	return parsed, cmd.ExecuteContext(context.Background())
+}
+
+func newCommand(stdout, stderr io.Writer, handler commandHandler) *cobra.Command {
+	cfg := defaultConfig()
+	jsonFlag := false
+
+	run := func(command Command, validate func(Config) error) func(*cobra.Command, []string) error {
+		return func(cmd *cobra.Command, _ []string) error {
+			cfg.Command = command
+			if jsonFlag {
+				cfg.Format = output.FormatJSON
+			}
+			if err := validateFormat(cfg.Format); err != nil {
+				return err
+			}
+			if validate != nil {
+				if err := validate(cfg); err != nil {
+					return err
+				}
+			}
+			return handler(cmd.Context(), cfg, stdout, stderr)
+		}
+	}
+
+	root := &cobra.Command{
+		Use:           "gh domino",
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		Args:          cobra.NoArgs,
+		RunE:          run(CommandTUI, nil),
+	}
+	root.SetOut(stdout)
+	root.SetErr(stderr)
+	addGlobalFlags(root, &cfg, &jsonFlag)
+
+	tuiCmd := &cobra.Command{
+		Use:  "tui",
+		Args: cobra.NoArgs,
+		RunE: run(CommandTUI, nil),
+	}
+	tuiCmd.Flags().BoolVar(&cfg.IncludeClean, "include-clean", false, "Allow update-branch actions for clean PRs")
+
+	listState := "all"
+	listCmd := &cobra.Command{
+		Use:  "list",
+		Args: cobra.NoArgs,
+		RunE: run(CommandList, func(cfg Config) error {
+			return validateState(cfg.State)
+		}),
+	}
+	listCmd.PreRun = func(*cobra.Command, []string) {
+		cfg.State = listState
+	}
+	listCmd.Flags().StringVar(&listState, "state", "all", "Filter state: all, broken, clean, updateable")
+	listCmd.Flags().BoolVar(&cfg.Flat, "flat", false, "Print flat rows instead of a tree")
+
+	planCmd := &cobra.Command{
+		Use:  "plan",
+		Args: cobra.NoArgs,
+		RunE: run(CommandPlan, nil),
+	}
+	planCmd.Flags().BoolVar(&cfg.IncludeClean, "include-clean", false, "Include update-branch actions for clean PRs")
+	addSelectionFlags(planCmd, &cfg, "Plan")
+
+	mergeCmd := &cobra.Command{
+		Use:  "merge",
+		Args: cobra.NoArgs,
+		RunE: run(CommandMerge, func(cfg Config) error {
+			if cfg.Parallel < 1 {
+				return errParallelMustBePositive()
+			}
+			return nil
+		}),
+	}
+	mergeCmd.Flags().BoolVar(&cfg.Yes, "yes", false, "Run without interactive confirmation")
+	mergeCmd.Flags().BoolVar(&cfg.DryRun, "dry-run", false, "Print action plan without mutating")
+	mergeCmd.Flags().BoolVar(&cfg.IncludeClean, "include-clean", false, "Include update-branch actions for clean PRs")
+	mergeCmd.Flags().IntVar(&cfg.Parallel, "parallel", 1, "Max independent stacks to process in parallel")
+	addSelectionFlags(mergeCmd, &cfg, "Execute")
+
+	root.AddCommand(tuiCmd, listCmd, planCmd, mergeCmd)
+	return root
+}
+
+func defaultConfig() Config {
+	return Config{
+		Command:     CommandTUI,
+		Remote:      "origin",
+		Author:      "@me",
+		MergedLimit: 30,
+		Format:      output.FormatHuman,
+		Parallel:    1,
+	}
+}
+
+func addGlobalFlags(cmd *cobra.Command, cfg *Config, jsonFlag *bool) {
+	flags := cmd.PersistentFlags()
+	flags.StringVar(&cfg.Repo, "repo", cfg.Repo, "GitHub repository override")
+	flags.StringVar(&cfg.Remote, "remote", cfg.Remote, "Git remote to fetch and inspect")
+	flags.StringVar(&cfg.Author, "author", cfg.Author, "PR author filter")
+	flags.IntVar(&cfg.MergedLimit, "merged-limit", cfg.MergedLimit, "Recently merged PR lookup limit")
+	flags.Var((*formatValue)(&cfg.Format), "format", "Output format: human, json")
+	flags.BoolVar(jsonFlag, "json", false, "Output JSON")
+	flags.BoolVar(&cfg.NoColor, "no-color", cfg.NoColor, "Disable ANSI color")
+	flags.BoolVar(&cfg.Verbose, "verbose", cfg.Verbose, "Print command/progress details")
+}
+
+func addSelectionFlags(cmd *cobra.Command, cfg *Config, verb string) {
+	cmd.Flags().Var((*intListValue)(&cfg.PRNumbers), "pr", verb+" actions targeting this PR; repeatable")
+	cmd.Flags().Var((*intListValue)(&cfg.SubtreeNums), "subtree", verb+" actions for this PR and descendants; repeatable")
+	cmd.Flags().Var((*intListValue)(&cfg.ChainNumbers), "chain", verb+" actions from the root PR to this PR; repeatable")
+}

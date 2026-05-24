@@ -13,11 +13,12 @@ import (
 )
 
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
-	cfg, err := Parse(args)
-	if err != nil {
-		return err
-	}
+	cmd := newCommand(stdout, stderr, runConfig)
+	cmd.SetArgs(args)
+	return cmd.ExecuteContext(ctx)
+}
 
+func runConfig(ctx context.Context, cfg Config, stdout, stderr io.Writer) error {
 	switch cfg.Command {
 	case CommandTUI:
 		return runTUI(ctx, cfg, stdout, stderr)
@@ -80,9 +81,8 @@ func runMerge(ctx context.Context, cfg Config, stdout io.Writer) error {
 	runner := gitcmd.NewRunner()
 	executor := gitkitexec.New(runner)
 	result, err := executor.Execute(ctx, plan, app.ExecuteOptions{
-		Remote:      cfg.Remote,
-		Parallel:    cfg.Parallel,
-		WorktreeDir: cfg.WorktreeDir,
+		Remote:   cfg.Remote,
+		Parallel: cfg.Parallel,
 	})
 	if result != nil {
 		if renderErr := output.RenderRunResult(stdout, result, cfg.Format); renderErr != nil {

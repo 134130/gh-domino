@@ -43,8 +43,8 @@ directly.
   recursive ancestor inference.
 - If a selected action depends on an unselected direct parent action, execution
   must not auto-include the parent. The plan may report an unselected dependency
-  warning; mutating execution should not run an action whose dependency is
-  missing.
+  warning; mutating execution should repair the selected PR against its current
+  direct parent branch.
 - Dry-run and real execution must use the same action plan. Dry-run must not
   mutate local Git state or GitHub PR state.
 - Local branches are not required. The planner should operate from fetched
@@ -94,7 +94,7 @@ Use these reasons in plan assertions:
 | ID | Scenario | Expected behavior |
 | --- | --- | --- |
 | ML-01 | `PR1` is merged. `PR2` and `PR3` remain open. The whole tree is selected by using `--subtree <PR2>` or no selector. | Plan actions in dependency order: repair `PR2`, then repair `PR3`. `PR3` depends only on the direct parent action for `PR2`. |
-| ML-02 | Same state as ML-01, but only `PR3` is selected with exact PR selection. | Do not implicitly select `PR2`. If the only reason for `PR3` to be repaired is the projected `PR2` repair, do not execute `PR3` without `PR2`. Report an unselected direct parent dependency warning if the plan includes the `PR3` action. |
+| ML-02 | Same state as ML-01, but only `PR3` is selected with exact PR selection. | Do not implicitly select `PR2`. Execute only `PR3` against its current direct parent `origin/stack-2`. Report an unselected direct parent dependency warning if the plan includes the `PR3` action. |
 | ML-03 | `PR2` has already been repaired and pushed onto `main`. `PR3` is still based on the old `stack-2` tip. | Plan `repair_pr` for `PR3` with reason `parent_diverged`. Rebase onto `origin/stack-2`. No ancestor lookup beyond `PR3`'s direct parent is needed. |
 | ML-04 | `PR1` and `PR2` are both merged, and `PR3` is still open. `PR2` was merged with base `main`. | Treat `stack-2` as `PR3`'s merged direct base. Plan `PR3` onto `main`. |
 | ML-05 | `PR1` and `PR2` are both merged, but `PR2` was merged into `stack-1` rather than `main`. | Treat `stack-2` as `PR3`'s merged direct base and plan `PR3` onto `stack-1`. Do not recursively collapse `stack-1` to `main` in the same action. |

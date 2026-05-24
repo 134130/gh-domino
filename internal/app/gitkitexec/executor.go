@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/134130/gh-domino/internal/app"
 	"github.com/134130/gitkit/ghcli"
@@ -17,9 +19,22 @@ import (
 
 const stashMessage = "gh-domino: preserve working tree"
 
+const (
+	settleAttempts = 5
+	settleDelay    = 100 * time.Millisecond
+)
+
+var worktreeMu sync.Mutex
+
 type Executor struct {
 	git gitrepo.Client
 	gh  ghcli.Client
+}
+
+type runOptions struct {
+	Remote      string
+	Parallel    int
+	WorktreeDir string
 }
 
 func New(r gitcmd.Runner) Executor {
@@ -34,8 +49,12 @@ func (e Executor) Execute(ctx context.Context, plan *app.Plan, opts app.ExecuteO
 		return nil, fmt.Errorf("plan is nil")
 	}
 	opts = normalizeOptions(opts)
-	if opts.Parallel != 1 {
-		return nil, fmt.Errorf("parallel execution is not implemented yet")
+	if opts.Parallel < 1 {
+		return nil, fmt.Errorf("parallel must be greater than 0")
+	}
+	runOpts := runOptions{
+		Remote:   opts.Remote,
+		Parallel: opts.Parallel,
 	}
 
 	result := &app.RunResult{
@@ -43,18 +62,32 @@ func (e Executor) Execute(ctx context.Context, plan *app.Plan, opts app.ExecuteO
 	}
 
 	restore := func(context.Context) error { return nil }
-	if requiresPreparation(plan.Actions) {
+	cleanup := func() error { return nil }
+	if requiresPreparation(plan.Actions) && opts.Parallel == 1 {
 		var err error
-		restore, err = e.prepareRun(ctx, opts)
+		restore, err = e.prepareRun(ctx)
 		if err != nil {
 			return result, err
 		}
+	} else if requiresPreparation(plan.Actions) {
+		worktreeDir, err := os.MkdirTemp("", "gh-domino-worktrees-*")
+		if err != nil {
+			return result, fmt.Errorf("create worktree dir: %w", err)
+		}
+		runOpts.WorktreeDir = worktreeDir
+		cleanup = func() error {
+			if err := os.RemoveAll(worktreeDir); err != nil {
+				return fmt.Errorf("remove worktree dir %s: %w", worktreeDir, err)
+			}
+			return nil
+		}
 	}
 
-	runErr := e.runSequential(ctx, result, plan.Actions, opts)
+	runErr := e.runActions(ctx, result, plan.Actions, runOpts)
 	restoreErr := restore(ctx)
-	if runErr != nil || restoreErr != nil {
-		return result, errors.Join(runErr, restoreErr)
+	cleanupErr := cleanup()
+	if runErr != nil || restoreErr != nil || cleanupErr != nil {
+		return result, errors.Join(runErr, restoreErr, cleanupErr)
 	}
 	return result, nil
 }
@@ -78,14 +111,7 @@ func requiresPreparation(actions []app.Action) bool {
 	return false
 }
 
-func (e Executor) prepareRun(ctx context.Context, opts app.ExecuteOptions) (func(context.Context) error, error) {
-	if opts.WorktreeDir != "" {
-		if err := os.MkdirAll(opts.WorktreeDir, 0755); err != nil {
-			return nil, fmt.Errorf("create worktree dir: %w", err)
-		}
-		return func(context.Context) error { return nil }, nil
-	}
-
+func (e Executor) prepareRun(ctx context.Context) (func(context.Context) error, error) {
 	branch, err := e.git.CurrentBranch(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get current branch: %w", err)
@@ -120,56 +146,143 @@ func (e Executor) prepareRun(ctx context.Context, opts app.ExecuteOptions) (func
 	}, nil
 }
 
-func (e Executor) runSequential(ctx context.Context, result *app.RunResult, actions []app.Action, opts app.ExecuteOptions) error {
-	selectedIDs := make(map[string]struct{}, len(actions))
-	for _, action := range actions {
-		selectedIDs[action.ID] = struct{}{}
+type actionNode struct {
+	action     app.Action
+	dependents []int
+	pending    int
+	blocked    string
+}
+
+type actionCompletion struct {
+	index  int
+	result app.ActionResult
+}
+
+func (e Executor) runActions(ctx context.Context, result *app.RunResult, actions []app.Action, opts runOptions) error {
+	nodes, hasDependents, err := buildActionGraph(actions)
+	if err != nil {
+		return err
+	}
+	if len(nodes) == 0 {
+		return nil
 	}
 
-	resultsByID := make(map[string]app.ActionStatus, len(actions))
-	for _, action := range actions {
-		skipReason := ""
-		for _, dependencyID := range action.DependsOn {
-			if _, selected := selectedIDs[dependencyID]; !selected {
-				skipReason = fmt.Sprintf("dependency %s was not selected", dependencyID)
-				break
-			}
-			if resultsByID[dependencyID] != app.ActionStatusSuccess {
-				skipReason = fmt.Sprintf("dependency %s did not succeed", dependencyID)
-				break
-			}
+	results := make([]app.ActionResult, len(nodes))
+	ready := make([]int, 0, len(nodes))
+	for i := range nodes {
+		if nodes[i].pending == 0 {
+			ready = append(ready, i)
 		}
-		if skipReason != "" {
-			actionResult := app.ActionResult{
-				Action: action,
-				Status: app.ActionStatusSkipped,
-				Error:  skipReason,
-			}
-			result.Actions = append(result.Actions, actionResult)
-			resultsByID[action.ID] = actionResult.Status
-			continue
-		}
-
-		if action.Kind != app.ActionRepairPR && action.Kind != app.ActionUpdateBranch {
-			return fmt.Errorf("unsupported action kind: %s", action.Kind)
-		}
-
-		err := e.executeAction(ctx, action, opts)
-		actionResult := app.ActionResult{
-			Action: action,
-			Status: app.ActionStatusSuccess,
-		}
-		if err != nil {
-			actionResult.Status = app.ActionStatusFailed
-			actionResult.Error = err.Error()
-		}
-		result.Actions = append(result.Actions, actionResult)
-		resultsByID[action.ID] = actionResult.Status
 	}
+
+	completions := make(chan actionCompletion)
+	running := 0
+	completed := 0
+
+	var complete func(actionCompletion)
+	complete = func(completion actionCompletion) {
+		if results[completion.index].Status != "" {
+			return
+		}
+		results[completion.index] = completion.result
+		completed++
+
+		for _, dependent := range nodes[completion.index].dependents {
+			if completion.result.Status != app.ActionStatusSuccess && nodes[dependent].blocked == "" {
+				nodes[dependent].blocked = fmt.Sprintf("dependency %s did not succeed", completion.result.Action.ID)
+			}
+			nodes[dependent].pending--
+			if nodes[dependent].pending != 0 {
+				continue
+			}
+			if nodes[dependent].blocked != "" {
+				complete(actionCompletion{
+					index: dependent,
+					result: app.ActionResult{
+						Action: nodes[dependent].action,
+						Status: app.ActionStatusSkipped,
+						Error:  nodes[dependent].blocked,
+					},
+				})
+				continue
+			}
+			ready = append(ready, dependent)
+		}
+	}
+
+	for completed < len(nodes) {
+		for running < opts.Parallel && len(ready) > 0 {
+			index := ready[0]
+			ready = ready[1:]
+			running++
+			go func() {
+				completions <- actionCompletion{
+					index:  index,
+					result: e.executeActionResult(ctx, nodes[index].action, opts, hasDependents[index]),
+				}
+			}()
+		}
+		if running == 0 {
+			return fmt.Errorf("action dependency cycle detected")
+		}
+		completion := <-completions
+		running--
+		complete(completion)
+	}
+
+	result.Actions = results
 	return nil
 }
 
-func (e Executor) executeAction(ctx context.Context, action app.Action, opts app.ExecuteOptions) error {
+func buildActionGraph(actions []app.Action) ([]actionNode, []bool, error) {
+	nodes := make([]actionNode, len(actions))
+	indexByID := make(map[string]int, len(actions))
+	for i, action := range actions {
+		if action.Kind != app.ActionRepairPR && action.Kind != app.ActionUpdateBranch {
+			return nil, nil, fmt.Errorf("unsupported action kind: %s", action.Kind)
+		}
+		if _, exists := indexByID[action.ID]; exists {
+			return nil, nil, fmt.Errorf("duplicate action ID: %s", action.ID)
+		}
+		indexByID[action.ID] = i
+		nodes[i] = actionNode{action: action}
+	}
+
+	hasDependents := make([]bool, len(actions))
+	for i, action := range actions {
+		for _, dependencyID := range action.DependsOn {
+			dependency, selected := indexByID[dependencyID]
+			if !selected {
+				continue
+			}
+			nodes[i].pending++
+			nodes[dependency].dependents = append(nodes[dependency].dependents, i)
+			hasDependents[dependency] = true
+		}
+	}
+	return nodes, hasDependents, nil
+}
+
+func (e Executor) executeActionResult(ctx context.Context, action app.Action, opts runOptions, hasDependents bool) app.ActionResult {
+	actionResult := app.ActionResult{
+		Action: action,
+		Status: app.ActionStatusSuccess,
+	}
+	if err := e.executeAction(ctx, action, opts); err != nil {
+		actionResult.Status = app.ActionStatusFailed
+		actionResult.Error = err.Error()
+		return actionResult
+	}
+	if hasDependents {
+		if err := e.settleAction(ctx, action, opts); err != nil {
+			actionResult.Status = app.ActionStatusFailed
+			actionResult.Error = err.Error()
+		}
+	}
+	return actionResult
+}
+
+func (e Executor) executeAction(ctx context.Context, action app.Action, opts runOptions) error {
 	switch action.Kind {
 	case app.ActionRepairPR:
 		if opts.WorktreeDir != "" {
@@ -184,7 +297,7 @@ func (e Executor) executeAction(ctx context.Context, action app.Action, opts app
 	}
 }
 
-func (e Executor) executeRepairInCurrentWorktree(ctx context.Context, action app.Action, opts app.ExecuteOptions) error {
+func (e Executor) executeRepairInCurrentWorktree(ctx context.Context, action app.Action, opts runOptions) error {
 	head := action.PR.HeadRefName
 	remoteHead := opts.Remote + "/" + head
 	if err := e.git.Switch(ctx, head); err != nil {
@@ -211,15 +324,20 @@ func (e Executor) executeRepairInCurrentWorktree(ctx context.Context, action app
 	return e.updateBase(ctx, e.gh, action)
 }
 
-func (e Executor) executeRepairInWorktree(ctx context.Context, action app.Action, opts app.ExecuteOptions) (err error) {
+func (e Executor) executeRepairInWorktree(ctx context.Context, action app.Action, opts runOptions) (err error) {
 	head := action.PR.HeadRefName
 	remoteHead := opts.Remote + "/" + head
 	path := filepath.Join(opts.WorktreeDir, worktreeName(action))
 
+	worktreeMu.Lock()
 	if err := e.git.WorktreeAdd(ctx, path, remoteHead, "--detach"); err != nil {
+		worktreeMu.Unlock()
 		return fmt.Errorf("create worktree for %s: %w", head, err)
 	}
+	worktreeMu.Unlock()
 	defer func() {
+		worktreeMu.Lock()
+		defer worktreeMu.Unlock()
 		if cleanupErr := e.git.WorktreeRemove(context.Background(), path, true); cleanupErr != nil && err == nil {
 			err = fmt.Errorf("remove worktree %s: %w", path, cleanupErr)
 		}
@@ -234,6 +352,40 @@ func (e Executor) executeRepairInWorktree(ctx context.Context, action app.Action
 		return fmt.Errorf("push %s: %w", head, err)
 	}
 	return e.updateBase(ctx, gh, action)
+}
+
+func (e Executor) settleAction(ctx context.Context, action app.Action, opts runOptions) error {
+	headRef := opts.Remote + "/" + action.PR.HeadRefName
+	base := action.NewBase
+	if base == "" {
+		base = action.PR.BaseRefName
+	}
+	baseRef := opts.Remote + "/" + base
+	refspec := fmt.Sprintf("+refs/heads/%s:refs/remotes/%s/%s", action.PR.HeadRefName, opts.Remote, action.PR.HeadRefName)
+
+	var lastErr error
+	for attempt := range settleAttempts {
+		if err := e.git.Fetch(ctx, opts.Remote, refspec); err != nil {
+			lastErr = err
+		} else if ok, err := e.git.IsAncestor(ctx, baseRef, headRef); err != nil {
+			lastErr = err
+		} else if ok {
+			return nil
+		} else {
+			lastErr = fmt.Errorf("%s is not an ancestor of %s", baseRef, headRef)
+		}
+
+		if attempt+1 < settleAttempts {
+			timer := time.NewTimer(settleDelay)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return ctx.Err()
+			case <-timer.C:
+			}
+		}
+	}
+	return fmt.Errorf("settle %s: %w", headRef, lastErr)
 }
 
 func (e Executor) rebase(ctx context.Context, git gitrepo.Client, action app.Action, remote, branch string) error {

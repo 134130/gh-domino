@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/134130/gh-domino/gitobj"
 	"github.com/134130/gh-domino/internal/app"
@@ -18,9 +20,11 @@ type fakeResponse struct {
 	stderr   string
 	exitCode int
 	err      error
+	delay    time.Duration
 }
 
 type fakeRunner struct {
+	mu        sync.Mutex
 	responses map[string][]fakeResponse
 	commands  []gitcmd.Command
 }
@@ -30,12 +34,18 @@ func newFakeRunner(responses map[string][]fakeResponse) *fakeRunner {
 }
 
 func (r *fakeRunner) Run(_ context.Context, cmd gitcmd.Command) (gitcmd.Result, error) {
+	r.mu.Lock()
 	r.commands = append(r.commands, cmd)
 	key := cmd.String()
 	var response fakeResponse
 	if queue := r.responses[key]; len(queue) > 0 {
 		response = queue[0]
 		r.responses[key] = queue[1:]
+	}
+	r.mu.Unlock()
+
+	if response.delay > 0 {
+		time.Sleep(response.delay)
 	}
 
 	result := gitcmd.Result{
@@ -57,6 +67,8 @@ func (r *fakeRunner) Run(_ context.Context, cmd gitcmd.Command) (gitcmd.Result, 
 }
 
 func (r *fakeRunner) Start(_ context.Context, cmd gitcmd.Command) (gitcmd.Process, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.commands = append(r.commands, cmd)
 	return nil, nil
 }
@@ -159,6 +171,40 @@ func TestExecutorUpdateBranchDoesNotPrepareCurrentWorktree(t *testing.T) {
 	}
 }
 
+func TestExecutorIgnoresUnselectedDependency(t *testing.T) {
+	runner := newFakeRunner(map[string][]fakeResponse{
+		"git branch --show-current":                             {{stdout: "main\n"}},
+		"git status --porcelain":                                {{stdout: ""}},
+		"git rev-list --left-right --count origin/child...HEAD": {{stdout: "0\t0\n"}},
+	})
+	executor := New(runner)
+	child := repairAction(53, "parent", "child", "", "")
+	child.DependsOn = []string{"repair-pr-52"}
+	plan := &app.Plan{Actions: []app.Action{child}}
+
+	result, err := executor.Execute(context.Background(), plan, app.ExecuteOptions{Remote: "origin"})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+
+	if got := result.Actions[0]; got.Status != app.ActionStatusSuccess {
+		t.Fatalf("result mismatch: %#v", got)
+	}
+	want := []string{
+		"git branch --show-current",
+		"git status --porcelain",
+		"git switch child",
+		"git rev-list --left-right --count origin/child...HEAD",
+		"git pull --rebase origin child",
+		"git rebase origin/parent child",
+		"git push --force-with-lease origin child",
+		"git switch main",
+	}
+	if got := commandStrings(runner.commands); !reflect.DeepEqual(got, want) {
+		t.Fatalf("commands mismatch\nwant: %#v\n got: %#v", want, got)
+	}
+}
+
 func TestExecutorFailsRepairWithLocalUnpushedCommits(t *testing.T) {
 	runner := newFakeRunner(map[string][]fakeResponse{
 		"git branch --show-current":                               {{stdout: "main\n"}},
@@ -227,9 +273,48 @@ func TestExecutorSkipsSelectedDependentActionWhenDependencyFails(t *testing.T) {
 	}
 }
 
+func TestExecutorSettlesSelectedDependencyBeforeChild(t *testing.T) {
+	runner := newFakeRunner(map[string][]fakeResponse{
+		"git branch --show-current":                              {{stdout: "main\n"}},
+		"git status --porcelain":                                 {{stdout: ""}},
+		"git rev-list --left-right --count origin/parent...HEAD": {{stdout: "0\t0\n"}},
+		"git rev-list --left-right --count origin/child...HEAD":  {{stdout: "0\t0\n"}},
+	})
+	executor := New(runner)
+	parent := repairAction(52, "main", "parent", "", "")
+	child := repairAction(53, "parent", "child", "", "")
+	child.DependsOn = []string{parent.ID}
+	plan := &app.Plan{Actions: []app.Action{parent, child}}
+
+	result, err := executor.Execute(context.Background(), plan, app.ExecuteOptions{Remote: "origin"})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	assertStatuses(t, result, []app.ActionStatus{app.ActionStatusSuccess, app.ActionStatusSuccess})
+
+	want := []string{
+		"git branch --show-current",
+		"git status --porcelain",
+		"git switch parent",
+		"git rev-list --left-right --count origin/parent...HEAD",
+		"git pull --rebase origin parent",
+		"git rebase origin/main parent",
+		"git push --force-with-lease origin parent",
+		"git fetch origin +refs/heads/parent:refs/remotes/origin/parent",
+		"git merge-base --is-ancestor origin/main origin/parent",
+		"git switch child",
+		"git rev-list --left-right --count origin/child...HEAD",
+		"git pull --rebase origin child",
+		"git rebase origin/parent child",
+		"git push --force-with-lease origin child",
+		"git switch main",
+	}
+	if got := commandStrings(runner.commands); !reflect.DeepEqual(got, want) {
+		t.Fatalf("commands mismatch\nwant: %#v\n got: %#v", want, got)
+	}
+}
+
 func TestExecutorRepairInDetachedWorktree(t *testing.T) {
-	worktreeDir := t.TempDir()
-	path := worktreeDir + "/gh-domino-52-feature-branch"
 	runner := newFakeRunner(nil)
 	executor := New(runner)
 	plan := &app.Plan{Actions: []app.Action{
@@ -237,8 +322,8 @@ func TestExecutorRepairInDetachedWorktree(t *testing.T) {
 	}}
 
 	result, err := executor.Execute(context.Background(), plan, app.ExecuteOptions{
-		Remote:      "origin",
-		WorktreeDir: worktreeDir,
+		Remote:   "origin",
+		Parallel: 2,
 	})
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
@@ -247,6 +332,8 @@ func TestExecutorRepairInDetachedWorktree(t *testing.T) {
 	if len(result.Actions) != 1 || result.Actions[0].Status != app.ActionStatusSuccess {
 		t.Fatalf("result mismatch: %#v", result.Actions)
 	}
+	got := commandStringsWithDir(runner.commands)
+	path := worktreePathFromAddCommand(t, got[0])
 	want := []string{
 		"git worktree add --detach " + path + " origin/feature/branch",
 		"git rebase --onto origin/main abc123 @" + path,
@@ -254,15 +341,39 @@ func TestExecutorRepairInDetachedWorktree(t *testing.T) {
 		"gh pr edit 52 --base main @" + path,
 		"git worktree remove --force " + path,
 	}
-	if got := commandStringsWithDir(runner.commands); !reflect.DeepEqual(got, want) {
+	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("commands mismatch\nwant: %#v\n got: %#v", want, got)
 	}
 }
 
-func TestExecutorRejectsParallelExecution(t *testing.T) {
+func TestExecutorKeepsPlanOrderForParallelResults(t *testing.T) {
+	runner := newFakeRunner(map[string][]fakeResponse{
+		"git rebase origin/main": {{delay: 20 * time.Millisecond}, {}},
+	})
+	executor := New(runner)
+	plan := &app.Plan{Actions: []app.Action{
+		repairAction(52, "main", "slow", "", ""),
+		repairAction(53, "main", "fast", "", ""),
+	}}
+
+	result, err := executor.Execute(context.Background(), plan, app.ExecuteOptions{
+		Remote:   "origin",
+		Parallel: 2,
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+
+	got := []int{result.Actions[0].Action.PR.Number, result.Actions[1].Action.PR.Number}
+	if !reflect.DeepEqual(got, []int{52, 53}) {
+		t.Fatalf("result order mismatch: %#v", result.Actions)
+	}
+}
+
+func TestExecutorRejectsInvalidParallel(t *testing.T) {
 	executor := New(newFakeRunner(nil))
 
-	_, err := executor.Execute(context.Background(), &app.Plan{}, app.ExecuteOptions{Parallel: 2})
+	_, err := executor.Execute(context.Background(), &app.Plan{}, app.ExecuteOptions{Parallel: -1})
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -310,6 +421,17 @@ func commandStrings(commands []gitcmd.Command) []string {
 	return out
 }
 
+func assertStatuses(t *testing.T, result *app.RunResult, want []app.ActionStatus) {
+	t.Helper()
+	got := make([]app.ActionStatus, 0, len(result.Actions))
+	for _, action := range result.Actions {
+		got = append(got, action.Status)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("statuses mismatch\nwant: %#v\n got: %#v\nresult: %#v", want, got, result.Actions)
+	}
+}
+
 func commandStringsWithDir(commands []gitcmd.Command) []string {
 	out := make([]string, 0, len(commands))
 	for _, command := range commands {
@@ -320,4 +442,13 @@ func commandStringsWithDir(commands []gitcmd.Command) []string {
 		out = append(out, value)
 	}
 	return out
+}
+
+func worktreePathFromAddCommand(t *testing.T, command string) string {
+	t.Helper()
+	fields := strings.Fields(command)
+	if len(fields) < 2 {
+		t.Fatalf("invalid worktree add command: %q", command)
+	}
+	return fields[len(fields)-2]
 }

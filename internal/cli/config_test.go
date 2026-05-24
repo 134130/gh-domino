@@ -63,6 +63,22 @@ func TestParseListJSONAlias(t *testing.T) {
 	}
 }
 
+func TestParsePersistentFlagsAfterCommand(t *testing.T) {
+	cfg, err := Parse([]string{"plan", "--remote", "upstream", "--json", "--include-clean"})
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	if cfg.Remote != "upstream" {
+		t.Fatalf("remote mismatch: %q", cfg.Remote)
+	}
+	if cfg.Format != output.FormatJSON {
+		t.Fatalf("format mismatch: %q", cfg.Format)
+	}
+	if !cfg.IncludeClean {
+		t.Fatalf("include-clean was not parsed")
+	}
+}
+
 func TestParsePlanRepeatableSelectors(t *testing.T) {
 	cfg, err := Parse([]string{"plan", "--pr", "52", "--pr", "57", "--subtree", "60", "--chain", "80", "--chain", "81"})
 	if err != nil {
@@ -95,6 +111,13 @@ func TestParsePlanRepeatableSelectors(t *testing.T) {
 
 func TestParseListRejectsSelectors(t *testing.T) {
 	_, err := Parse([]string{"list", "--chain", "52"})
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestParseMergeRejectsWorktreeDir(t *testing.T) {
+	_, err := Parse([]string{"merge", "--worktree-dir", "/tmp/worktrees"})
 	if err == nil {
 		t.Fatalf("expected error")
 	}
