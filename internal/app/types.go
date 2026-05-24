@@ -45,7 +45,7 @@ type SelectionMode string
 const (
 	SelectNode    SelectionMode = "node"
 	SelectSubtree SelectionMode = "subtree"
-	SelectStack   SelectionMode = "stack"
+	SelectChain   SelectionMode = "chain"
 )
 
 type Selection struct {

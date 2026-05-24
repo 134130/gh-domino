@@ -63,7 +63,7 @@ func TestRenderPlanHumanWarnings(t *testing.T) {
 		"  repair #53 stack-2 onto stack-1\n" +
 		"\n" +
 		"Warnings\n" +
-		"  #53 has an unselected related action: repair #52 stack-1 onto main. Use --subtree or --stack to include it.\n"
+		"  #53 has an unselected related action: repair #52 stack-1 onto main. Use --chain or select it explicitly.\n"
 	if got := out.String(); got != want {
 		t.Fatalf("output mismatch\nwant: %q\n got: %q", want, got)
 	}

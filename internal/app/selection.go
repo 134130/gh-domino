@@ -18,10 +18,10 @@ func (p *Plan) Select(selection Selection) (*Plan, error) {
 		return selected, nil
 	}
 
-	nodes := nodeIndex(p.Roots)
+	tree := indexTree(p.Roots)
 	selectedPRs := map[int]struct{}{}
 	for _, item := range selection.Items {
-		node, ok := nodes[item.PRNumber]
+		node, ok := tree.nodes[item.PRNumber]
 		if !ok {
 			return nil, fmt.Errorf("PR #%d was not found in the dependency tree", item.PRNumber)
 		}
@@ -31,12 +31,8 @@ func (p *Plan) Select(selection Selection) (*Plan, error) {
 			selectedPRs[item.PRNumber] = struct{}{}
 		case SelectSubtree:
 			collectSubtreePRs(node, selectedPRs)
-		case SelectStack:
-			root := stackRoot(p.Roots, item.PRNumber)
-			if root == nil {
-				return nil, fmt.Errorf("stack containing PR #%d was not found", item.PRNumber)
-			}
-			collectSubtreePRs(root, selectedPRs)
+		case SelectChain:
+			collectChainPRs(item.PRNumber, tree.parents, selectedPRs)
 		default:
 			return nil, fmt.Errorf("unsupported selection mode: %s", item.Mode)
 		}
@@ -55,42 +51,6 @@ func (p *Plan) Select(selection Selection) (*Plan, error) {
 		selected.Actions = append(selected.Actions, action)
 		selectedIDs[action.ID] = struct{}{}
 	}
-	selected.Warnings = selectionWarnings(selected.Actions, p.Actions)
-	return selected, nil
-}
-
-func (p *Plan) SelectStacks(prNumbers []int) (*Plan, error) {
-	if p == nil {
-		return nil, fmt.Errorf("plan is nil")
-	}
-	if len(prNumbers) == 0 {
-		return p.clone(), nil
-	}
-
-	nodes := nodeIndex(p.Roots)
-	selectedPRs := map[int]struct{}{}
-	selectedRootPRs := map[int]struct{}{}
-	for _, prNumber := range prNumbers {
-		if _, ok := nodes[prNumber]; !ok {
-			return nil, fmt.Errorf("PR #%d was not found in the dependency tree", prNumber)
-		}
-		root := stackRoot(p.Roots, prNumber)
-		if root == nil {
-			return nil, fmt.Errorf("stack containing PR #%d was not found", prNumber)
-		}
-		selectedRootPRs[root.Value.Number] = struct{}{}
-		collectSubtreePRs(root, selectedPRs)
-	}
-
-	selected := p.clone()
-	selected.Roots = selected.Roots[:0]
-	for _, root := range p.Roots {
-		if _, ok := selectedRootPRs[root.Value.Number]; ok {
-			selected.Roots = append(selected.Roots, root)
-		}
-	}
-	selected.Pulls = filterPullStatusesByPR(p.Pulls, selectedPRs)
-	selected.Actions = filterActionsByPR(p.Actions, selectedPRs)
 	selected.Warnings = selectionWarnings(selected.Actions, p.Actions)
 	return selected, nil
 }
@@ -137,26 +97,6 @@ func selectionWarnings(selectedActions, allActions []Action) []SelectionWarning 
 	return warnings
 }
 
-func filterPullStatusesByPR(statuses []PullStatus, prNumbers map[int]struct{}) []PullStatus {
-	out := make([]PullStatus, 0, len(statuses))
-	for _, status := range statuses {
-		if _, ok := prNumbers[status.PR.Number]; ok {
-			out = append(out, status)
-		}
-	}
-	return out
-}
-
-func filterActionsByPR(actions []Action, prNumbers map[int]struct{}) []Action {
-	out := make([]Action, 0, len(actions))
-	for _, action := range actions {
-		if _, ok := prNumbers[action.PR.Number]; ok {
-			out = append(out, action)
-		}
-	}
-	return out
-}
-
 func actionsByIDFrom(actions []Action) map[string]Action {
 	out := make(map[string]Action, len(actions))
 	for _, action := range actions {
@@ -165,20 +105,31 @@ func actionsByIDFrom(actions []Action) map[string]Action {
 	return out
 }
 
-func nodeIndex(roots []*stackedpr.Node) map[int]*stackedpr.Node {
-	index := map[int]*stackedpr.Node{}
-	var walk func(*stackedpr.Node)
-	walk = func(node *stackedpr.Node) {
+type treeIndex struct {
+	nodes   map[int]*stackedpr.Node
+	parents map[int]int
+}
+
+func indexTree(roots []*stackedpr.Node) treeIndex {
+	index := treeIndex{
+		nodes:   map[int]*stackedpr.Node{},
+		parents: map[int]int{},
+	}
+	var walk func(*stackedpr.Node, int)
+	walk = func(node *stackedpr.Node, parentPR int) {
 		if node == nil {
 			return
 		}
-		index[node.Value.Number] = node
+		index.nodes[node.Value.Number] = node
+		if parentPR != 0 {
+			index.parents[node.Value.Number] = parentPR
+		}
 		for _, child := range node.Children {
-			walk(child)
+			walk(child, node.Value.Number)
 		}
 	}
 	for _, root := range roots {
-		walk(root)
+		walk(root, 0)
 	}
 	return index
 }
@@ -193,26 +144,8 @@ func collectSubtreePRs(node *stackedpr.Node, out map[int]struct{}) {
 	}
 }
 
-func stackRoot(roots []*stackedpr.Node, prNumber int) *stackedpr.Node {
-	for _, root := range roots {
-		if subtreeContains(root, prNumber) {
-			return root
-		}
+func collectChainPRs(prNumber int, parents map[int]int, out map[int]struct{}) {
+	for current := prNumber; current != 0; current = parents[current] {
+		out[current] = struct{}{}
 	}
-	return nil
-}
-
-func subtreeContains(node *stackedpr.Node, prNumber int) bool {
-	if node == nil {
-		return false
-	}
-	if node.Value.Number == prNumber {
-		return true
-	}
-	for _, child := range node.Children {
-		if subtreeContains(child, prNumber) {
-			return true
-		}
-	}
-	return false
 }

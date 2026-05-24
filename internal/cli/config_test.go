@@ -64,7 +64,7 @@ func TestParseListJSONAlias(t *testing.T) {
 }
 
 func TestParsePlanRepeatableSelectors(t *testing.T) {
-	cfg, err := Parse([]string{"plan", "--pr", "52", "--pr", "57", "--subtree", "60", "--stack", "80", "--stack", "81"})
+	cfg, err := Parse([]string{"plan", "--pr", "52", "--pr", "57", "--subtree", "60", "--chain", "80", "--chain", "81"})
 	if err != nil {
 		t.Fatalf("Parse returned error: %v", err)
 	}
@@ -75,8 +75,8 @@ func TestParsePlanRepeatableSelectors(t *testing.T) {
 	if !reflect.DeepEqual(cfg.SubtreeNums, []int{60}) {
 		t.Fatalf("SubtreeNums mismatch: %#v", cfg.SubtreeNums)
 	}
-	if !reflect.DeepEqual(cfg.StackNumbers, []int{80, 81}) {
-		t.Fatalf("StackNumbers mismatch: %#v", cfg.StackNumbers)
+	if !reflect.DeepEqual(cfg.ChainNumbers, []int{80, 81}) {
+		t.Fatalf("ChainNumbers mismatch: %#v", cfg.ChainNumbers)
 	}
 
 	selection := cfg.Selection()
@@ -85,22 +85,18 @@ func TestParsePlanRepeatableSelectors(t *testing.T) {
 		{PRNumber: 52, Mode: app.SelectNode},
 		{PRNumber: 57, Mode: app.SelectNode},
 		{PRNumber: 60, Mode: app.SelectSubtree},
-		{PRNumber: 80, Mode: app.SelectStack},
-		{PRNumber: 81, Mode: app.SelectStack},
+		{PRNumber: 80, Mode: app.SelectChain},
+		{PRNumber: 81, Mode: app.SelectChain},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("selection mismatch\nwant: %#v\n got: %#v", want, got)
 	}
 }
 
-func TestParseListRepeatableStackSelector(t *testing.T) {
-	cfg, err := Parse([]string{"list", "--stack", "52", "--stack", "80"})
-	if err != nil {
-		t.Fatalf("Parse returned error: %v", err)
-	}
-
-	if !reflect.DeepEqual(cfg.StackNumbers, []int{52, 80}) {
-		t.Fatalf("StackNumbers mismatch: %#v", cfg.StackNumbers)
+func TestParseListRejectsSelectors(t *testing.T) {
+	_, err := Parse([]string{"list", "--chain", "52"})
+	if err == nil {
+		t.Fatalf("expected error")
 	}
 }
 

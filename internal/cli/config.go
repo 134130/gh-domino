@@ -35,7 +35,7 @@ type Config struct {
 	IncludeClean bool
 	PRNumbers    []int
 	SubtreeNums  []int
-	StackNumbers []int
+	ChainNumbers []int
 
 	Yes         bool
 	DryRun      bool
@@ -87,21 +87,21 @@ func (c Config) PlanOptions() app.PlanOptions {
 }
 
 func (c Config) Selection() app.Selection {
-	items := make([]app.SelectionItem, 0, len(c.PRNumbers)+len(c.SubtreeNums)+len(c.StackNumbers))
+	items := make([]app.SelectionItem, 0, len(c.PRNumbers)+len(c.SubtreeNums)+len(c.ChainNumbers))
 	for _, number := range c.PRNumbers {
 		items = append(items, app.SelectionItem{PRNumber: number, Mode: app.SelectNode})
 	}
 	for _, number := range c.SubtreeNums {
 		items = append(items, app.SelectionItem{PRNumber: number, Mode: app.SelectSubtree})
 	}
-	for _, number := range c.StackNumbers {
-		items = append(items, app.SelectionItem{PRNumber: number, Mode: app.SelectStack})
+	for _, number := range c.ChainNumbers {
+		items = append(items, app.SelectionItem{PRNumber: number, Mode: app.SelectChain})
 	}
 	return app.Selection{Items: items}
 }
 
 func (c Config) HasSelection() bool {
-	return len(c.PRNumbers) > 0 || len(c.SubtreeNums) > 0 || len(c.StackNumbers) > 0
+	return len(c.PRNumbers) > 0 || len(c.SubtreeNums) > 0 || len(c.ChainNumbers) > 0
 }
 
 func parseGlobal(args []string, cfg *Config) error {
@@ -139,7 +139,6 @@ func parseList(args []string, cfg Config) (Config, error) {
 	addGlobalFlags(fs, &cfg)
 	fs.StringVar(&cfg.State, "state", "all", "Filter state: all, broken, clean, updateable")
 	fs.BoolVar(&cfg.Flat, "flat", false, "Print flat rows instead of a tree")
-	fs.Var((*intListValue)(&cfg.StackNumbers), "stack", "Show only the stack containing this PR; repeatable")
 	jsonFlag := fs.Bool("json", false, "Output JSON")
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
@@ -160,7 +159,7 @@ func parsePlan(args []string, cfg Config) (Config, error) {
 	fs.BoolVar(&cfg.IncludeClean, "include-clean", false, "Include update-branch actions for clean PRs")
 	fs.Var((*intListValue)(&cfg.PRNumbers), "pr", "Plan actions targeting this PR; repeatable")
 	fs.Var((*intListValue)(&cfg.SubtreeNums), "subtree", "Plan actions for this PR and descendants; repeatable")
-	fs.Var((*intListValue)(&cfg.StackNumbers), "stack", "Plan actions for the stack containing this PR; repeatable")
+	fs.Var((*intListValue)(&cfg.ChainNumbers), "chain", "Plan actions from the root PR to this PR; repeatable")
 	jsonFlag := fs.Bool("json", false, "Output JSON")
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
@@ -180,7 +179,7 @@ func parseMerge(args []string, cfg Config) (Config, error) {
 	fs.BoolVar(&cfg.IncludeClean, "include-clean", false, "Include update-branch actions for clean PRs")
 	fs.Var((*intListValue)(&cfg.PRNumbers), "pr", "Execute actions targeting this PR; repeatable")
 	fs.Var((*intListValue)(&cfg.SubtreeNums), "subtree", "Execute actions for this PR and descendants; repeatable")
-	fs.Var((*intListValue)(&cfg.StackNumbers), "stack", "Execute actions for the stack containing this PR; repeatable")
+	fs.Var((*intListValue)(&cfg.ChainNumbers), "chain", "Execute actions from the root PR to this PR; repeatable")
 	fs.IntVar(&cfg.Parallel, "parallel", 1, "Max independent stacks to process in parallel")
 	fs.StringVar(&cfg.WorktreeDir, "worktree-dir", "", "Temporary worktree base directory")
 	jsonFlag := fs.Bool("json", false, "Output JSON")

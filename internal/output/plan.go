@@ -195,13 +195,13 @@ func warningLine(warning app.SelectionWarning) string {
 	case app.SelectionWarningUnselectedDependency:
 		if warning.DependencyPR != 0 {
 			return fmt.Sprintf(
-				"#%d has an unselected related action: %s. Use --subtree or --stack to include it.",
+				"#%d has an unselected related action: %s. Use --chain or select it explicitly.",
 				warning.PRNumber,
 				dependencyActionLine(warning),
 			)
 		}
 		return fmt.Sprintf(
-			"#%d has an unselected related action %s. Use --subtree or --stack to include it.",
+			"#%d has an unselected related action %s. Use --chain or select it explicitly.",
 			warning.PRNumber,
 			warning.DependencyID,
 		)

@@ -74,19 +74,19 @@ func TestPlanSelectSubtreeSelectsNodeAndDescendants(t *testing.T) {
 	}
 }
 
-func TestPlanSelectStackSelectsWholeRootStack(t *testing.T) {
-	plan := selectionTestPlan()
+func TestPlanSelectChainSelectsAncestorsOnly(t *testing.T) {
+	plan := chainSelectionTestPlan()
 
 	selected, err := plan.Select(Selection{Items: []SelectionItem{{
-		PRNumber: 53,
-		Mode:     SelectStack,
+		PRNumber: 56,
+		Mode:     SelectChain,
 	}}})
 	if err != nil {
 		t.Fatalf("Select returned error: %v", err)
 	}
 
 	got := actionIDs(selected.Actions)
-	want := []string{"repair-pr-52", "repair-pr-53"}
+	want := []string{"repair-pr-52", "repair-pr-53", "repair-pr-56"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("selected actions mismatch\nwant: %#v\n got: %#v", want, got)
 	}
@@ -125,64 +125,12 @@ func TestPlanSelectUnknownPRReturnsError(t *testing.T) {
 	}
 }
 
-func TestPlanSelectStacksFiltersRootsPullsAndActions(t *testing.T) {
-	plan := selectionTestPlan()
-
-	selected, err := plan.SelectStacks([]int{53})
-	if err != nil {
-		t.Fatalf("SelectStacks returned error: %v", err)
-	}
-
-	gotActions := actionIDs(selected.Actions)
-	wantActions := []string{"repair-pr-52", "repair-pr-53"}
-	if !reflect.DeepEqual(gotActions, wantActions) {
-		t.Fatalf("selected actions mismatch\nwant: %#v\n got: %#v", wantActions, gotActions)
-	}
-
-	gotRoots := rootPRNumbers(selected.Roots)
-	wantRoots := []int{52}
-	if !reflect.DeepEqual(gotRoots, wantRoots) {
-		t.Fatalf("selected roots mismatch\nwant: %#v\n got: %#v", wantRoots, gotRoots)
-	}
-
-	gotPulls := pullStatusPRNumbers(selected.Pulls)
-	wantPulls := []int{52, 53}
-	if !reflect.DeepEqual(gotPulls, wantPulls) {
-		t.Fatalf("selected pulls mismatch\nwant: %#v\n got: %#v", wantPulls, gotPulls)
-	}
-}
-
-func TestPlanSelectStacksUnknownPRReturnsError(t *testing.T) {
-	plan := selectionTestPlan()
-
-	_, err := plan.SelectStacks([]int{999})
-	if err == nil {
-		t.Fatalf("expected error")
-	}
-}
-
 func actionIDs(actions []Action) []string {
 	ids := make([]string, 0, len(actions))
 	for _, action := range actions {
 		ids = append(ids, action.ID)
 	}
 	return ids
-}
-
-func rootPRNumbers(roots []*stackedpr.Node) []int {
-	numbers := make([]int, 0, len(roots))
-	for _, root := range roots {
-		numbers = append(numbers, root.Value.Number)
-	}
-	return numbers
-}
-
-func pullStatusPRNumbers(statuses []PullStatus) []int {
-	numbers := make([]int, 0, len(statuses))
-	for _, status := range statuses {
-		numbers = append(numbers, status.PR.Number)
-	}
-	return numbers
 }
 
 func selectionTestPlan() *Plan {
@@ -223,6 +171,47 @@ func selectionTestPlan() *Plan {
 			Kind:   ActionUpdateBranch,
 			PR:     other.Value,
 			Reason: ReasonRebaseAll,
+		}},
+	}
+}
+
+func chainSelectionTestPlan() *Plan {
+	root := &stackedpr.Node{Value: pr(52, "bar", "main", "stack-1")}
+	child := &stackedpr.Node{Value: pr(53, "baz", "stack-1", "stack-2")}
+	sibling := &stackedpr.Node{Value: pr(55, "sibling", "stack-1", "sibling")}
+	grandchild := &stackedpr.Node{Value: pr(56, "quux", "stack-2", "stack-3")}
+	root.Children = []*stackedpr.Node{child, sibling}
+	child.Children = []*stackedpr.Node{grandchild}
+
+	return &Plan{
+		Roots: []*stackedpr.Node{root},
+		Actions: []Action{{
+			ID:      "repair-pr-52",
+			Kind:    ActionRepairPR,
+			PR:      root.Value,
+			NewBase: "main",
+			Reason:  ReasonMergedBase,
+		}, {
+			ID:        "repair-pr-53",
+			Kind:      ActionRepairPR,
+			PR:        child.Value,
+			NewBase:   "stack-1",
+			Reason:    ReasonParentDiverged,
+			DependsOn: []string{"repair-pr-52"},
+		}, {
+			ID:        "repair-pr-55",
+			Kind:      ActionRepairPR,
+			PR:        sibling.Value,
+			NewBase:   "stack-1",
+			Reason:    ReasonParentDiverged,
+			DependsOn: []string{"repair-pr-52"},
+		}, {
+			ID:        "repair-pr-56",
+			Kind:      ActionRepairPR,
+			PR:        grandchild.Value,
+			NewBase:   "stack-2",
+			Reason:    ReasonParentDiverged,
+			DependsOn: []string{"repair-pr-53"},
 		}},
 	}
 }

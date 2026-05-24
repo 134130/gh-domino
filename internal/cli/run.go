@@ -40,10 +40,6 @@ func runList(ctx context.Context, cfg Config, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	plan, err = plan.SelectStacks(cfg.StackNumbers)
-	if err != nil {
-		return err
-	}
 	return output.RenderList(stdout, plan, output.ListOptions{
 		Format: cfg.Format,
 		State:  cfg.State,
