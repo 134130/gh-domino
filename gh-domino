@@ -4,7 +4,7 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-SCRIPT_DIR=$(realpath "$(dirname "${BASH_SOURCE[0]}")")
+SCRIPT_DIR="$(dirname "$(realpath "$0")")"
 DIST_DIR="${SCRIPT_DIR}/dist"
 
 VERSION=$(git -C "$SCRIPT_DIR" describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")

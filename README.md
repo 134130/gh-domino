@@ -53,23 +53,15 @@ gh domino [--auto] [--dry-run]
 
 ### Example
 
-Here are the two of three stacked PRs:
+Here is a tree of the stacked PRs:
 
-![git-l1](./assets/git-l1.png)
+![git-l1](assets/no-broken.png)
 
-With the `gh-domino`, you can see like this:
-
-![no-broken](./assets/no-broken.png)
-
-After merging the first PR, you can see like this:
+After merging some PRs, you can see like this:
 
 ![broken](./assets/broken.png)
 
-You can automatically rebase the remaining PRs with:
-
-```bash
-gh domino --auto
-```
+You can automatically rebase the remaining PRs in parallel:
 
 ![rebase](./assets/rebase.png)
 
