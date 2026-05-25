@@ -63,6 +63,16 @@ func TestParseListJSONAlias(t *testing.T) {
 	}
 }
 
+func TestParseVerboseShorthand(t *testing.T) {
+	cfg, err := Parse([]string{"plan", "-v"})
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	if !cfg.Verbose {
+		t.Fatalf("verbose shorthand was not parsed")
+	}
+}
+
 func TestParsePersistentFlagsAfterCommand(t *testing.T) {
 	cfg, err := Parse([]string{"plan", "--remote", "upstream", "--json", "--include-clean"})
 	if err != nil {

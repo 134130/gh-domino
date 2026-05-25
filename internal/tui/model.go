@@ -124,13 +124,16 @@ func RunSelector(ctx context.Context, plan *app.Plan, opts Options) (*SelectorRe
 	}
 
 	m := NewModel(ctx, plan, opts)
-	programOpts := []tea.ProgramOption{}
+	programOpts := []tea.ProgramOption{tea.WithContext(ctx)}
 	if opts.Output != nil {
 		programOpts = append(programOpts, tea.WithOutput(opts.Output))
 	}
 	p := tea.NewProgram(m, programOpts...)
 	finalModel, err := p.Run()
 	if err != nil {
+		if interrupted := interruptedProgramErr(ctx, err); interrupted != nil {
+			return nil, interrupted
+		}
 		return nil, err
 	}
 	tuiModel, ok := finalModel.(Model)

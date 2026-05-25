@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -206,6 +207,42 @@ func TestModelUsesMiniDotSpinner(t *testing.T) {
 	}
 }
 
+func TestPlanLoadModelCtrlCCancelsAndQuits(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	m := planLoadModel{ctx: ctx, cancel: cancel}
+
+	model, cmd := m.Update(keyMsg("ctrl+c"))
+	next, ok := model.(planLoadModel)
+	if !ok {
+		t.Fatalf("unexpected model type %T", model)
+	}
+	if ctx.Err() == nil {
+		t.Fatalf("expected context to be canceled")
+	}
+	if !errors.Is(next.err, context.Canceled) {
+		t.Fatalf("expected context canceled error, got %v", next.err)
+	}
+	assertQuitCmd(t, cmd)
+}
+
+func TestExecutionModelCtrlCCancelsAndQuits(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	m := executionModel{ctx: ctx, cancel: cancel}
+
+	model, cmd := m.Update(keyMsg("ctrl+c"))
+	next, ok := model.(executionModel)
+	if !ok {
+		t.Fatalf("unexpected model type %T", model)
+	}
+	if ctx.Err() == nil {
+		t.Fatalf("expected context to be canceled")
+	}
+	if !errors.Is(next.err, context.Canceled) {
+		t.Fatalf("expected context canceled error, got %v", next.err)
+	}
+	assertQuitCmd(t, cmd)
+}
+
 func press(t *testing.T, m *Model, key string) tea.Cmd {
 	t.Helper()
 	model, cmd := m.Update(keyMsg(key))
@@ -256,12 +293,24 @@ func runCmd(t *testing.T, m *Model, cmd tea.Cmd) {
 	*m = next
 }
 
+func assertQuitCmd(t *testing.T, cmd tea.Cmd) {
+	t.Helper()
+	if cmd == nil {
+		t.Fatalf("expected quit command")
+	}
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Fatalf("expected quit message")
+	}
+}
+
 func keyMsg(value string) tea.KeyPressMsg {
 	switch value {
 	case "enter":
 		return tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter})
 	case "esc":
 		return tea.KeyPressMsg(tea.Key{Code: tea.KeyEsc})
+	case "ctrl+c":
+		return tea.KeyPressMsg(tea.Key{Code: 'c', Mod: tea.ModCtrl})
 	case "j", "k", "m", "a", "c", "p", "P", "q":
 		r := []rune(value)[0]
 		return tea.KeyPressMsg(tea.Key{Text: value, Code: r})

@@ -130,7 +130,7 @@ func addGlobalFlags(cmd *cobra.Command, cfg *Config, jsonFlag *bool) {
 	flags.Var((*formatValue)(&cfg.Format), "format", "Output format: human, json")
 	flags.BoolVar(jsonFlag, "json", false, "Output JSON")
 	flags.BoolVar(&cfg.NoColor, "no-color", cfg.NoColor, "Disable ANSI color")
-	flags.BoolVar(&cfg.Verbose, "verbose", cfg.Verbose, "Print command/progress details")
+	flags.BoolVarP(&cfg.Verbose, "verbose", "v", cfg.Verbose, "Print command/progress details")
 }
 
 func addSelectionFlags(cmd *cobra.Command, cfg *Config, verb string) {

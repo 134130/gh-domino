@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -157,7 +158,7 @@ func RunPlanLoader(ctx context.Context, opts PlanLoadOptions) (*app.Plan, error)
 		spinner:      s,
 		progress:     newProgressState("Loading pull requests", opts.NoColor, opts.Verbose),
 	}
-	programOpts := []tea.ProgramOption{}
+	programOpts := []tea.ProgramOption{tea.WithContext(ctx)}
 	if opts.Output != nil {
 		programOpts = append(programOpts, tea.WithOutput(opts.Output))
 		if !isTerminalWriter(opts.Output) {
@@ -167,6 +168,9 @@ func RunPlanLoader(ctx context.Context, opts PlanLoadOptions) (*app.Plan, error)
 	p := tea.NewProgram(m, programOpts...)
 	finalModel, err := p.Run()
 	if err != nil {
+		if interrupted := interruptedProgramErr(ctx, err); interrupted != nil {
+			return nil, interrupted
+		}
 		return nil, err
 	}
 	loaded, ok := finalModel.(planLoadModel)
@@ -189,7 +193,9 @@ func (m planLoadModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	case tea.KeyPressMsg:
 		if msg.String() == "ctrl+c" {
+			m.err = context.Canceled
 			m.cancel()
+			return m, tea.Quit
 		}
 		return m, nil
 	case progressMsg:
@@ -279,7 +285,7 @@ func RunExecution(ctx context.Context, plan *app.Plan, opts ExecutionOptions) (*
 		actions:  initialActionStates(plan),
 		noColor:  opts.NoColor,
 	}
-	programOpts := []tea.ProgramOption{}
+	programOpts := []tea.ProgramOption{tea.WithContext(ctx)}
 	if opts.Output != nil {
 		programOpts = append(programOpts, tea.WithOutput(opts.Output))
 		if !isTerminalWriter(opts.Output) {
@@ -289,6 +295,9 @@ func RunExecution(ctx context.Context, plan *app.Plan, opts ExecutionOptions) (*
 	p := tea.NewProgram(m, programOpts...)
 	finalModel, err := p.Run()
 	if err != nil {
+		if interrupted := interruptedProgramErr(ctx, err); interrupted != nil {
+			return nil, interrupted
+		}
 		return nil, err
 	}
 	executed, ok := finalModel.(executionModel)
@@ -314,7 +323,9 @@ func (m executionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	case tea.KeyPressMsg:
 		if msg.String() == "ctrl+c" {
+			m.err = context.Canceled
 			m.cancel()
+			return m, tea.Quit
 		}
 		return m, nil
 	case progressMsg:
@@ -333,6 +344,16 @@ func (m executionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func isTerminalWriter(w io.Writer) bool {
 	file, ok := w.(*os.File)
 	return ok && term.IsTerminal(int(file.Fd()))
+}
+
+func interruptedProgramErr(ctx context.Context, err error) error {
+	if !errors.Is(err, tea.ErrInterrupted) && !errors.Is(err, tea.ErrProgramKilled) {
+		return nil
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+	return context.Canceled
 }
 
 func (m executionModel) View() tea.View {
