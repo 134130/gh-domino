@@ -132,6 +132,31 @@ func TestPlannerMarksMergedAncestorReason(t *testing.T) {
 	}
 }
 
+func TestPlannerIgnoresMergedPRCommitsMissingLocally(t *testing.T) {
+	ctx := context.Background()
+	store := newFakeStore()
+	store.mergeBases[pair("origin/main", "sha-feature")] = "sha-main"
+	store.ancestorErrors[pair("missing-commit", "sha-feature")] = fmt.Errorf("failed to run git: fatal: Not a valid commit name missing-commit")
+
+	plan, err := NewPlanner(store).Build(ctx, Snapshot{
+		OpenPullRequests: []gitobj.PullRequest{
+			pr(52, "bar", "main", "feature"),
+		},
+		MergedPullRequests: []gitobj.PullRequest{
+			withCommits(pr(51, "old merged", "main", "old-stack"), "missing-commit"),
+		},
+		HeadSHAs: map[string]string{
+			"feature": "sha-feature",
+		},
+	}, PlanOptions{})
+	if err != nil {
+		t.Fatalf("Build returned error: %v", err)
+	}
+	if len(plan.Actions) != 0 {
+		t.Fatalf("expected no actions, got %#v", plan.Actions)
+	}
+}
+
 func actionSummaries(actions []Action) []string {
 	summaries := make([]string, 0, len(actions))
 	for _, action := range actions {
@@ -175,18 +200,20 @@ func withMerge(pr gitobj.PullRequest, sha string) gitobj.PullRequest {
 }
 
 type fakeStore struct {
-	defaultBranch string
-	refSHAs       map[string]string
-	mergeBases    map[[2]string]string
-	ancestors     map[[2]string]bool
+	defaultBranch  string
+	refSHAs        map[string]string
+	mergeBases     map[[2]string]string
+	ancestors      map[[2]string]bool
+	ancestorErrors map[[2]string]error
 }
 
 func newFakeStore() *fakeStore {
 	return &fakeStore{
-		defaultBranch: "main",
-		refSHAs:       map[string]string{},
-		mergeBases:    map[[2]string]string{},
-		ancestors:     map[[2]string]bool{},
+		defaultBranch:  "main",
+		refSHAs:        map[string]string{},
+		mergeBases:     map[[2]string]string{},
+		ancestors:      map[[2]string]bool{},
+		ancestorErrors: map[[2]string]error{},
 	}
 }
 
@@ -225,5 +252,8 @@ func (s *fakeStore) MergeBase(_ context.Context, a, b string) (string, error) {
 }
 
 func (s *fakeStore) IsAncestor(_ context.Context, ancestor, descendant string) (bool, error) {
+	if err, ok := s.ancestorErrors[pair(ancestor, descendant)]; ok {
+		return false, err
+	}
 	return s.ancestors[pair(ancestor, descendant)], nil
 }

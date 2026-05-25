@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/134130/gh-domino/gitobj"
 	"github.com/134130/gh-domino/internal/stackedpr"
@@ -265,7 +266,7 @@ func (p Planner) squashUpstream(ctx context.Context, pr gitobj.PullRequest) (str
 	}
 
 	for _, commit := range pr.Commits {
-		isAncestor, err := p.store.IsAncestor(ctx, commit.Oid, pr.MergeCommit.Sha)
+		isAncestor, err := p.isAncestor(ctx, commit.Oid, pr.MergeCommit.Sha)
 		if err != nil {
 			return "", fmt.Errorf("check ancestry for commit %s: %w", commit.Oid, err)
 		}
@@ -345,7 +346,7 @@ func (p Planner) buildDependencyTree(
 			}
 
 			ancestorCommit := mergedPR.Commits[0].Oid
-			isAncestor, err := p.store.IsAncestor(ctx, ancestorCommit, headSHAs[node.Value.HeadRefName])
+			isAncestor, err := p.isAncestor(ctx, ancestorCommit, headSHAs[node.Value.HeadRefName])
 			if err == nil && isAncestor {
 				node.OriginalBase = &mergedPRs[i]
 				break
@@ -357,6 +358,28 @@ func (p Planner) buildDependencyTree(
 	}
 
 	return roots, nil
+}
+
+func (p Planner) isAncestor(ctx context.Context, ancestor, descendant string) (bool, error) {
+	isAncestor, err := p.store.IsAncestor(ctx, ancestor, descendant)
+	if err == nil {
+		return isAncestor, nil
+	}
+	if isMissingCommitError(err) {
+		return false, nil
+	}
+	return false, err
+}
+
+func isMissingCommitError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := err.Error()
+	return strings.Contains(message, "Not a valid commit name") ||
+		strings.Contains(message, "unknown revision") ||
+		strings.Contains(message, "bad revision") ||
+		strings.Contains(message, "ambiguous argument")
 }
 
 func cloneStringMap(src map[string]string) map[string]string {
