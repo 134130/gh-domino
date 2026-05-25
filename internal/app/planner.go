@@ -19,29 +19,98 @@ func NewPlanner(store RepositoryStore) Planner {
 
 func (p Planner) BuildPlan(ctx context.Context, opts PlanOptions) (*Plan, error) {
 	opts = opts.normalized()
+	progress := opts.Progress
+
+	EmitProgress(progress, ProgressEvent{
+		Kind:    ProgressStart,
+		Phase:   "fetch",
+		Message: fmt.Sprintf("Fetching %s", opts.Remote),
+	})
 	if err := p.store.Fetch(ctx, opts.Remote); err != nil {
+		EmitProgress(progress, ProgressEvent{
+			Kind:    ProgressFailure,
+			Phase:   "fetch",
+			Message: fmt.Sprintf("Fetch %s failed", opts.Remote),
+		})
 		return nil, fmt.Errorf("fetch %s: %w", opts.Remote, err)
 	}
+	EmitProgress(progress, ProgressEvent{
+		Kind:    ProgressSuccess,
+		Phase:   "fetch",
+		Message: fmt.Sprintf("Fetched %s", opts.Remote),
+	})
 
+	EmitProgress(progress, ProgressEvent{
+		Kind:    ProgressStart,
+		Phase:   "open-prs",
+		Message: "Loading open pull requests",
+	})
 	openPRs, err := p.store.OpenPullRequests(ctx, opts.Author)
 	if err != nil {
+		EmitProgress(progress, ProgressEvent{
+			Kind:    ProgressFailure,
+			Phase:   "open-prs",
+			Message: "Load open pull requests failed",
+		})
 		return nil, fmt.Errorf("list pull requests: %w", err)
 	}
+	EmitProgress(progress, ProgressEvent{
+		Kind:    ProgressSuccess,
+		Phase:   "open-prs",
+		Message: fmt.Sprintf("Loaded %d open pull requests", len(openPRs)),
+	})
 
+	EmitProgress(progress, ProgressEvent{
+		Kind:    ProgressStart,
+		Phase:   "merged-prs",
+		Message: "Loading merged pull requests",
+	})
 	mergedPRs, err := p.store.MergedPullRequests(ctx, opts.Author, opts.MergedLimit)
 	if err != nil {
+		EmitProgress(progress, ProgressEvent{
+			Kind:    ProgressFailure,
+			Phase:   "merged-prs",
+			Message: "Load merged pull requests failed",
+		})
 		return nil, fmt.Errorf("list merged pull requests: %w", err)
 	}
+	EmitProgress(progress, ProgressEvent{
+		Kind:    ProgressSuccess,
+		Phase:   "merged-prs",
+		Message: fmt.Sprintf("Loaded %d merged pull requests", len(mergedPRs)),
+	})
 
+	EmitProgress(progress, ProgressEvent{
+		Kind:    ProgressStart,
+		Phase:   "head-shas",
+		Message: fmt.Sprintf("Resolving %d branch heads", len(openPRs)),
+	})
 	headSHAs := make(map[string]string, len(openPRs))
 	for _, pr := range openPRs {
 		ref := fmt.Sprintf("%s/%s", opts.Remote, pr.HeadRefName)
+		EmitProgress(progress, ProgressEvent{
+			Kind:     ProgressLog,
+			Phase:    "head-shas",
+			Message:  fmt.Sprintf("Resolving %s", ref),
+			PRNumber: pr.Number,
+		})
 		sha, err := p.store.RefSHA(ctx, ref)
 		if err != nil {
+			EmitProgress(progress, ProgressEvent{
+				Kind:     ProgressFailure,
+				Phase:    "head-shas",
+				Message:  fmt.Sprintf("Resolve %s failed", ref),
+				PRNumber: pr.Number,
+			})
 			return nil, fmt.Errorf("get SHA for %s: %w", pr.HeadRefName, err)
 		}
 		headSHAs[pr.HeadRefName] = sha
 	}
+	EmitProgress(progress, ProgressEvent{
+		Kind:    ProgressSuccess,
+		Phase:   "head-shas",
+		Message: fmt.Sprintf("Resolved %d branch heads", len(headSHAs)),
+	})
 
 	return p.Build(ctx, Snapshot{
 		OpenPullRequests:   openPRs,
@@ -52,12 +121,28 @@ func (p Planner) BuildPlan(ctx context.Context, opts PlanOptions) (*Plan, error)
 
 func (p Planner) Build(ctx context.Context, snapshot Snapshot, opts PlanOptions) (*Plan, error) {
 	opts = opts.normalized()
+	progress := opts.Progress
 
 	headSHAs := cloneStringMap(snapshot.HeadSHAs)
+	EmitProgress(progress, ProgressEvent{
+		Kind:    ProgressStart,
+		Phase:   "tree",
+		Message: "Building dependency tree",
+	})
 	roots, err := p.buildDependencyTree(ctx, snapshot.OpenPullRequests, snapshot.MergedPullRequests, headSHAs, opts)
 	if err != nil {
+		EmitProgress(progress, ProgressEvent{
+			Kind:    ProgressFailure,
+			Phase:   "tree",
+			Message: "Build dependency tree failed",
+		})
 		return nil, err
 	}
+	EmitProgress(progress, ProgressEvent{
+		Kind:    ProgressSuccess,
+		Phase:   "tree",
+		Message: "Built dependency tree",
+	})
 
 	prByHead := make(map[string]gitobj.PullRequest, len(snapshot.OpenPullRequests))
 	for _, pr := range snapshot.OpenPullRequests {
@@ -77,6 +162,11 @@ func (p Planner) Build(ctx context.Context, snapshot Snapshot, opts PlanOptions)
 	actionByHead := map[string]string{}
 	processed := map[int]bool{}
 
+	EmitProgress(progress, ProgressEvent{
+		Kind:    ProgressStart,
+		Phase:   "classify",
+		Message: fmt.Sprintf("Classifying %d pull requests", len(snapshot.OpenPullRequests)),
+	})
 	var walk func(*stackedpr.Node) error
 	walk = func(node *stackedpr.Node) error {
 		if node == nil {
@@ -93,6 +183,12 @@ func (p Planner) Build(ctx context.Context, snapshot Snapshot, opts PlanOptions)
 		if err != nil {
 			return err
 		}
+		EmitProgress(progress, ProgressEvent{
+			Kind:     ProgressLog,
+			Phase:    "classify",
+			Message:  fmt.Sprintf("Classified #%d as %s", pr.Number, status.State),
+			PRNumber: pr.Number,
+		})
 		plan.Pulls = append(plan.Pulls, status)
 
 		var action *Action
@@ -134,9 +230,19 @@ func (p Planner) Build(ctx context.Context, snapshot Snapshot, opts PlanOptions)
 
 	for _, root := range roots {
 		if err := walk(root); err != nil {
+			EmitProgress(progress, ProgressEvent{
+				Kind:    ProgressFailure,
+				Phase:   "classify",
+				Message: "Classify pull requests failed",
+			})
 			return nil, err
 		}
 	}
+	EmitProgress(progress, ProgressEvent{
+		Kind:    ProgressSuccess,
+		Phase:   "classify",
+		Message: fmt.Sprintf("Classified %d pull requests", len(plan.Pulls)),
+	})
 
 	return plan, nil
 }

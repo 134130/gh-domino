@@ -179,13 +179,13 @@ func TestRenderRunResultHuman(t *testing.T) {
 	}
 
 	var out strings.Builder
-	if err := RenderRunResult(&out, result, FormatHuman); err != nil {
+	if err := RenderRunResult(&out, result, FormatHuman, true); err != nil {
 		t.Fatalf("RenderRunResult returned error: %v", err)
 	}
 
 	want := "Results\n" +
-		"  success repair #52 stack-2 onto main\n" +
-		"  failed update-branch #53 topic: update failed\n"
+		"  ✔ repair #52 stack-2 → main\n" +
+		"  ✘ update #53 topic: update failed\n"
 	if got := out.String(); got != want {
 		t.Fatalf("output mismatch\nwant: %q\n got: %q", want, got)
 	}

@@ -18,7 +18,7 @@ import (
 )
 
 // PlanLoader rebuilds a plan when the user toggles clean update actions.
-type PlanLoader func(ctx context.Context, includeClean bool) (*app.Plan, error)
+type PlanLoader func(ctx context.Context, includeClean bool, progress app.ProgressSink) (*app.Plan, error)
 
 // Options configures the selector model and program.
 type Options struct {
@@ -27,6 +27,7 @@ type Options struct {
 	LoadPlan     PlanLoader
 	Output       io.Writer
 	NoColor      bool
+	Verbose      bool
 }
 
 // SelectorResult is returned from RunSelector after the user confirms.
@@ -56,6 +57,7 @@ type Model struct {
 	loadPlan   PlanLoader
 	loadErr    error
 	previewErr error
+	progress   progressState
 
 	flat       []termrender.FlatNode
 	statusByPR map[int]app.PullStatus
@@ -105,6 +107,7 @@ func NewModel(ctx context.Context, plan *app.Plan, opts Options) Model {
 		mode:         app.SelectNode,
 		includeClean: opts.IncludeClean,
 		noColor:      opts.NoColor,
+		progress:     newProgressState("Rebuilding plan", opts.NoColor, opts.Verbose),
 		parallel:     parallel,
 		selected:     make(map[int]bool),
 	}
@@ -191,6 +194,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.setPlan(msg.plan)
 		m.refreshPreview()
 		return m, nil
+
+	case progressMsg:
+		m.progress.apply(msg.event)
+		return m, waitProgressCmd(msg.ch)
+
+	case progressDoneMsg:
+		return m, nil
 	}
 
 	return m, nil
@@ -244,7 +254,7 @@ func (m Model) View() tea.View {
 	var content string
 	switch m.phase {
 	case phaseLoading:
-		content = fmt.Sprintf("%s Rebuilding plan...\n", m.spinner.View())
+		content = m.progress.view(m.spinner.View())
 	default:
 		content = m.viewSelecting()
 	}
@@ -409,12 +419,15 @@ func (m Model) toggleClean() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.phase = phaseLoading
-	return m, m.loadPlanCmd(includeClean)
+	m.progress = newProgressState("Rebuilding plan", m.noColor, m.progress.verbose)
+	ch := make(chan app.ProgressEvent, 64)
+	return m, tea.Batch(waitProgressCmd(ch), m.loadPlanCmd(includeClean, channelProgressSink{ch: ch}, ch))
 }
 
-func (m Model) loadPlanCmd(includeClean bool) tea.Cmd {
+func (m Model) loadPlanCmd(includeClean bool, sink app.ProgressSink, ch chan app.ProgressEvent) tea.Cmd {
 	return func() tea.Msg {
-		plan, err := m.loadPlan(m.ctx, includeClean)
+		defer close(ch)
+		plan, err := m.loadPlan(m.ctx, includeClean, sink)
 		return msgPlanLoaded{
 			plan:         plan,
 			includeClean: includeClean,

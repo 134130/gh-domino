@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/134130/gh-domino/gitobj"
@@ -157,6 +158,35 @@ func TestPlannerIgnoresMergedPRCommitsMissingLocally(t *testing.T) {
 	}
 }
 
+func TestPlannerBuildPlanEmitsProgress(t *testing.T) {
+	ctx := context.Background()
+	store := newFakeStore()
+	progress := &recordProgress{}
+
+	_, err := NewPlanner(store).BuildPlan(ctx, PlanOptions{Progress: progress})
+	if err != nil {
+		t.Fatalf("BuildPlan returned error: %v", err)
+	}
+
+	got := progress.messages()
+	for _, want := range []string{
+		"Fetching origin",
+		"Fetched origin",
+		"Loading open pull requests",
+		"Loaded 0 open pull requests",
+		"Loading merged pull requests",
+		"Loaded 0 merged pull requests",
+		"Building dependency tree",
+		"Built dependency tree",
+		"Classifying 0 pull requests",
+		"Classified 0 pull requests",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected progress to contain %q, got %q", want, got)
+		}
+	}
+}
+
 func actionSummaries(actions []Action) []string {
 	summaries := make([]string, 0, len(actions))
 	for _, action := range actions {
@@ -205,6 +235,22 @@ type fakeStore struct {
 	mergeBases     map[[2]string]string
 	ancestors      map[[2]string]bool
 	ancestorErrors map[[2]string]error
+}
+
+type recordProgress struct {
+	events []ProgressEvent
+}
+
+func (r *recordProgress) Progress(event ProgressEvent) {
+	r.events = append(r.events, event)
+}
+
+func (r *recordProgress) messages() string {
+	values := make([]string, 0, len(r.events))
+	for _, event := range r.events {
+		values = append(values, event.Message)
+	}
+	return strings.Join(values, "\n")
 }
 
 func newFakeStore() *fakeStore {

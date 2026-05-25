@@ -3,7 +3,6 @@ package cli
 import (
 	"bytes"
 	"context"
-	"io"
 	"strings"
 	"testing"
 
@@ -35,7 +34,7 @@ func TestRunDefaultUsesTUIPathAndQuitSkipsExecute(t *testing.T) {
 	var built bool
 	var selected bool
 	var executed bool
-	buildPlanFunc = func(_ context.Context, cfg Config) (*app.Plan, error) {
+	buildPlanFunc = func(_ context.Context, cfg Config, _ app.ProgressSink) (*app.Plan, error) {
 		built = true
 		if cfg.Command != CommandTUI {
 			t.Fatalf("expected TUI command, got %s", cfg.Command)
@@ -52,9 +51,9 @@ func TestRunDefaultUsesTUIPathAndQuitSkipsExecute(t *testing.T) {
 		}
 		return nil, nil
 	}
-	executeSelectedFunc = func(context.Context, Config, *app.Plan, int, io.Writer) error {
+	executePlanFunc = func(context.Context, Config, *app.Plan, int, app.ProgressSink) (*app.RunResult, error) {
 		executed = true
-		return nil
+		return nil, nil
 	}
 
 	var stdout bytes.Buffer
@@ -76,7 +75,7 @@ func TestRunTUIConfirmExecutesSelectedPlan(t *testing.T) {
 
 	initial := &app.Plan{}
 	selectedPlan := &app.Plan{Actions: []app.Action{{ID: "repair-pr-52"}}}
-	buildPlanFunc = func(_ context.Context, _ Config) (*app.Plan, error) {
+	buildPlanFunc = func(_ context.Context, _ Config, _ app.ProgressSink) (*app.Plan, error) {
 		return initial, nil
 	}
 	runSelectorFunc = func(_ context.Context, got *app.Plan, opts tui.Options) (*tui.SelectorResult, error) {
@@ -91,10 +90,10 @@ func TestRunTUIConfirmExecutesSelectedPlan(t *testing.T) {
 
 	var executedPlan *app.Plan
 	var executedParallel int
-	executeSelectedFunc = func(_ context.Context, _ Config, plan *app.Plan, parallel int, _ io.Writer) error {
+	executePlanFunc = func(_ context.Context, _ Config, plan *app.Plan, parallel int, _ app.ProgressSink) (*app.RunResult, error) {
 		executedPlan = plan
 		executedParallel = parallel
-		return nil
+		return &app.RunResult{}, nil
 	}
 
 	var stdout bytes.Buffer
@@ -114,10 +113,10 @@ func stubRunHooks(t *testing.T) func() {
 	t.Helper()
 	oldBuildPlan := buildPlanFunc
 	oldRunSelector := runSelectorFunc
-	oldExecute := executeSelectedFunc
+	oldExecute := executePlanFunc
 	return func() {
 		buildPlanFunc = oldBuildPlan
 		runSelectorFunc = oldRunSelector
-		executeSelectedFunc = oldExecute
+		executePlanFunc = oldExecute
 	}
 }

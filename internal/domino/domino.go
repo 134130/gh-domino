@@ -463,17 +463,19 @@ func HandleBrokenPR(
 // runInteractive is kept for the legacy internal/domino entry point, but it now
 // uses the same app.Plan-centered selector and gitkit executor as the v3 CLI.
 func runInteractive(ctx context.Context, cancel context.CancelFunc, cfg Config) error {
-	build := func(ctx context.Context, includeClean bool) (*app.Plan, error) {
-		store := gitkitstore.New(gitcmd.NewRunner())
+	build := func(ctx context.Context, includeClean bool, progress app.ProgressSink) (*app.Plan, error) {
+		runner := app.NewProgressRunner(gitcmd.NewRunner(), progress)
+		store := gitkitstore.New(runner)
 		return app.NewPlanner(store).BuildPlan(ctx, app.PlanOptions{
 			Remote:       "origin",
 			Author:       "@me",
 			MergedLimit:  30,
 			IncludeClean: includeClean,
+			Progress:     progress,
 		})
 	}
 
-	plan, err := build(ctx, cfg.RebaseAll)
+	plan, err := build(ctx, cfg.RebaseAll, nil)
 	if err != nil {
 		cancel()
 		return err

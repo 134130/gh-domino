@@ -394,6 +394,47 @@ func TestExecutorReturnsSetupErrorWhenCurrentBranchCannotBeRead(t *testing.T) {
 	}
 }
 
+func TestExecutorEmitsProgressForRepairAction(t *testing.T) {
+	runner := newFakeRunner(map[string][]fakeResponse{
+		"git branch --show-current":                               {{stdout: "main\n"}},
+		"git status --porcelain":                                  {{stdout: ""}},
+		"git rev-list --left-right --count origin/feature...HEAD": {{stdout: "0\t0\n"}},
+	})
+	progress := &recordProgress{}
+	executor := New(runner)
+	plan := &app.Plan{Actions: []app.Action{
+		repairAction(52, "stack-1", "feature", "main", "abc123"),
+	}}
+
+	result, err := executor.Execute(context.Background(), plan, app.ExecuteOptions{
+		Remote:   "origin",
+		Progress: progress,
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if result.Actions[0].Status != app.ActionStatusSuccess {
+		t.Fatalf("result mismatch: %#v", result.Actions)
+	}
+
+	got := progress.messages()
+	for _, want := range []string{
+		"Preparing 1 actions",
+		"Preparing current worktree",
+		"Repairing #52 feature onto main",
+		"Switching to feature",
+		"Rebasing feature onto origin/main",
+		"Pushing feature",
+		"Updating base for #52 to main",
+		"Repaired #52 feature",
+		"Execution finished",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected progress to contain %q, got %q", want, got)
+		}
+	}
+}
+
 func repairAction(number int, base, head, newBase, upstream string) app.Action {
 	return app.Action{
 		ID:       fmt.Sprintf("repair-pr-%d", number),
@@ -451,4 +492,25 @@ func worktreePathFromAddCommand(t *testing.T, command string) string {
 		t.Fatalf("invalid worktree add command: %q", command)
 	}
 	return fields[len(fields)-2]
+}
+
+type recordProgress struct {
+	mu     sync.Mutex
+	events []app.ProgressEvent
+}
+
+func (r *recordProgress) Progress(event app.ProgressEvent) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.events = append(r.events, event)
+}
+
+func (r *recordProgress) messages() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	values := make([]string, 0, len(r.events))
+	for _, event := range r.events {
+		values = append(values, event.Message)
+	}
+	return strings.Join(values, "\n")
 }

@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"strings"
 
+	"charm.land/lipgloss/v2"
 	"github.com/134130/gh-domino/internal/app"
 	"github.com/134130/gh-domino/internal/termrender"
 )
@@ -54,9 +54,13 @@ func RenderPlan(w io.Writer, plan, selectedPlan *app.Plan, opts PlanOptions) err
 	return err
 }
 
-func RenderRunResult(w io.Writer, result *app.RunResult, format Format) error {
+func RenderRunResult(w io.Writer, result *app.RunResult, format Format, noColor ...bool) error {
 	if format == FormatJSON {
 		return renderRunResultJSON(w, result)
+	}
+	opts := termrender.Options{}
+	if len(noColor) > 0 {
+		opts.NoColor = noColor[0]
 	}
 
 	if _, err := fmt.Fprintln(w, "Results"); err != nil {
@@ -68,7 +72,7 @@ func RenderRunResult(w io.Writer, result *app.RunResult, format Format) error {
 		}
 	}
 	for _, action := range result.Actions {
-		line := fmt.Sprintf("%s %s", action.Status, actionLine(action.Action))
+		line := fmt.Sprintf("%s %s", statusSummary(action.Status, opts.NoColor), termrender.ActionSummary(action.Action, opts))
 		if action.Error != "" {
 			line += ": " + action.Error
 		}
@@ -92,20 +96,24 @@ func RenderRunResult(w io.Writer, result *app.RunResult, format Format) error {
 	return nil
 }
 
-func actionLine(action app.Action) string {
-	pr := action.PR
-	switch action.Kind {
-	case app.ActionRepairPR:
-		parts := []string{fmt.Sprintf("repair #%d %s onto %s", pr.Number, pr.HeadRefName, action.NewBase)}
-		if action.Upstream != "" {
-			parts = append(parts, fmt.Sprintf("(upstream %s)", action.Upstream))
-		}
-		return strings.Join(parts, " ")
-	case app.ActionUpdateBranch:
-		return fmt.Sprintf("update-branch #%d %s", pr.Number, pr.HeadRefName)
-	default:
-		return fmt.Sprintf("%s #%d %s", action.Kind, pr.Number, pr.HeadRefName)
+func statusSummary(status app.ActionStatus, noColor bool) string {
+	style := lipgloss.NewStyle()
+	symbol := string(status)
+	switch status {
+	case app.ActionStatusSuccess:
+		symbol = "✔"
+		style = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(2))
+	case app.ActionStatusFailed:
+		symbol = "✘"
+		style = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(1))
+	case app.ActionStatusSkipped:
+		symbol = "!"
+		style = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(3))
 	}
+	if noColor {
+		return symbol
+	}
+	return style.Render(symbol)
 }
 
 func warningLine(warning app.SelectionWarning) string {

@@ -46,6 +46,7 @@ type Action struct {
 type ExecuteOptions struct {
 	Remote   string
 	Parallel int
+	Progress ProgressSink
 }
 
 type ActionStatus string
@@ -135,6 +136,7 @@ type PlanOptions struct {
 	Author       string
 	MergedLimit  int
 	IncludeClean bool
+	Progress     ProgressSink
 }
 
 func (o PlanOptions) normalized() PlanOptions {

@@ -35,6 +35,7 @@ type runOptions struct {
 	Remote      string
 	Parallel    int
 	WorktreeDir string
+	Progress    app.ProgressSink
 }
 
 func New(r gitcmd.Runner) Executor {
@@ -55,6 +56,7 @@ func (e Executor) Execute(ctx context.Context, plan *app.Plan, opts app.ExecuteO
 	runOpts := runOptions{
 		Remote:   opts.Remote,
 		Parallel: opts.Parallel,
+		Progress: opts.Progress,
 	}
 
 	result := &app.RunResult{
@@ -63,32 +65,52 @@ func (e Executor) Execute(ctx context.Context, plan *app.Plan, opts app.ExecuteO
 
 	restore := func(context.Context) error { return nil }
 	cleanup := func() error { return nil }
+	emitProgress(opts.Progress, app.ProgressStart, "execute", fmt.Sprintf("Preparing %d actions", len(plan.Actions)))
 	if requiresPreparation(plan.Actions) && opts.Parallel == 1 {
 		var err error
+		emitProgress(opts.Progress, app.ProgressStart, "prepare", "Preparing current worktree")
 		restore, err = e.prepareRun(ctx)
 		if err != nil {
+			emitProgress(opts.Progress, app.ProgressFailure, "prepare", "Prepare current worktree failed")
 			return result, err
 		}
+		emitProgress(opts.Progress, app.ProgressSuccess, "prepare", "Prepared current worktree")
 	} else if requiresPreparation(plan.Actions) {
+		emitProgress(opts.Progress, app.ProgressStart, "prepare", "Preparing temporary worktrees")
 		worktreeDir, err := os.MkdirTemp("", "gh-domino-worktrees-*")
 		if err != nil {
+			emitProgress(opts.Progress, app.ProgressFailure, "prepare", "Prepare temporary worktrees failed")
 			return result, fmt.Errorf("create worktree dir: %w", err)
 		}
 		runOpts.WorktreeDir = worktreeDir
 		cleanup = func() error {
+			emitProgress(opts.Progress, app.ProgressStart, "cleanup", "Removing temporary worktrees")
 			if err := os.RemoveAll(worktreeDir); err != nil {
+				emitProgress(opts.Progress, app.ProgressFailure, "cleanup", "Remove temporary worktrees failed")
 				return fmt.Errorf("remove worktree dir %s: %w", worktreeDir, err)
 			}
+			emitProgress(opts.Progress, app.ProgressSuccess, "cleanup", "Removed temporary worktrees")
 			return nil
 		}
+		emitProgress(opts.Progress, app.ProgressSuccess, "prepare", "Prepared temporary worktrees")
 	}
 
 	runErr := e.runActions(ctx, result, plan.Actions, runOpts)
+	if requiresPreparation(plan.Actions) && opts.Parallel == 1 {
+		emitProgress(opts.Progress, app.ProgressStart, "restore", "Restoring current worktree")
+	}
 	restoreErr := restore(ctx)
+	if restoreErr != nil {
+		emitProgress(opts.Progress, app.ProgressFailure, "restore", "Restore current worktree failed")
+	} else if requiresPreparation(plan.Actions) && opts.Parallel == 1 {
+		emitProgress(opts.Progress, app.ProgressSuccess, "restore", "Restored current worktree")
+	}
 	cleanupErr := cleanup()
 	if runErr != nil || restoreErr != nil || cleanupErr != nil {
+		emitProgress(opts.Progress, app.ProgressFailure, "execute", "Execution failed")
 		return result, errors.Join(runErr, restoreErr, cleanupErr)
 	}
+	emitProgress(opts.Progress, app.ProgressSuccess, "execute", "Execution finished")
 	return result, nil
 }
 
@@ -164,8 +186,10 @@ func (e Executor) runActions(ctx context.Context, result *app.RunResult, actions
 		return err
 	}
 	if len(nodes) == 0 {
+		emitProgress(opts.Progress, app.ProgressSuccess, "actions", "No actions to execute")
 		return nil
 	}
+	emitProgress(opts.Progress, app.ProgressStart, "actions", fmt.Sprintf("Executing %d actions", len(nodes)))
 
 	results := make([]app.ActionResult, len(nodes))
 	ready := make([]int, 0, len(nodes))
@@ -196,14 +220,16 @@ func (e Executor) runActions(ctx context.Context, result *app.RunResult, actions
 				continue
 			}
 			if nodes[dependent].blocked != "" {
-				complete(actionCompletion{
+				completion := actionCompletion{
 					index: dependent,
 					result: app.ActionResult{
 						Action: nodes[dependent].action,
 						Status: app.ActionStatusSkipped,
 						Error:  nodes[dependent].blocked,
 					},
-				})
+				}
+				emitActionProgress(opts.Progress, app.ProgressSkipped, nodes[dependent].action, nodes[dependent].blocked)
+				complete(completion)
 				continue
 			}
 			ready = append(ready, dependent)
@@ -215,6 +241,7 @@ func (e Executor) runActions(ctx context.Context, result *app.RunResult, actions
 			index := ready[0]
 			ready = ready[1:]
 			running++
+			emitActionProgress(opts.Progress, app.ProgressStart, nodes[index].action, actionRunningMessage(nodes[index].action))
 			go func() {
 				completions <- actionCompletion{
 					index:  index,
@@ -231,6 +258,7 @@ func (e Executor) runActions(ctx context.Context, result *app.RunResult, actions
 	}
 
 	result.Actions = results
+	emitProgress(opts.Progress, app.ProgressSuccess, "actions", fmt.Sprintf("Executed %d actions", len(nodes)))
 	return nil
 }
 
@@ -271,14 +299,18 @@ func (e Executor) executeActionResult(ctx context.Context, action app.Action, op
 	if err := e.executeAction(ctx, action, opts); err != nil {
 		actionResult.Status = app.ActionStatusFailed
 		actionResult.Error = err.Error()
+		emitActionProgress(opts.Progress, app.ProgressFailure, action, err.Error())
 		return actionResult
 	}
 	if hasDependents {
 		if err := e.settleAction(ctx, action, opts); err != nil {
 			actionResult.Status = app.ActionStatusFailed
 			actionResult.Error = err.Error()
+			emitActionProgress(opts.Progress, app.ProgressFailure, action, err.Error())
+			return actionResult
 		}
 	}
+	emitActionProgress(opts.Progress, app.ProgressSuccess, action, actionSuccessMessage(action))
 	return actionResult
 }
 
@@ -290,6 +322,7 @@ func (e Executor) executeAction(ctx context.Context, action app.Action, opts run
 		}
 		return e.executeRepairInCurrentWorktree(ctx, action, opts)
 	case app.ActionUpdateBranch:
+		emitActionProgress(opts.Progress, app.ProgressLog, action, fmt.Sprintf("Updating branch for #%d", action.PR.Number))
 		_, err := e.gh.Run(ctx, "pr", "update-branch", "--rebase", fmt.Sprint(action.PR.Number))
 		return err
 	default:
@@ -300,11 +333,13 @@ func (e Executor) executeAction(ctx context.Context, action app.Action, opts run
 func (e Executor) executeRepairInCurrentWorktree(ctx context.Context, action app.Action, opts runOptions) error {
 	head := action.PR.HeadRefName
 	remoteHead := opts.Remote + "/" + head
+	emitActionProgress(opts.Progress, app.ProgressLog, action, fmt.Sprintf("Switching to %s", head))
 	if err := e.git.Switch(ctx, head); err != nil {
 		if err := e.git.SwitchCreateOrReset(ctx, head, remoteHead); err != nil {
 			return fmt.Errorf("switch to %s: %w", head, err)
 		}
 	}
+	emitActionProgress(opts.Progress, app.ProgressLog, action, fmt.Sprintf("Checking %s against %s", head, remoteHead))
 	relationship, err := e.git.AheadBehind(ctx, remoteHead, "HEAD")
 	if err != nil {
 		return fmt.Errorf("compare %s with HEAD: %w", remoteHead, err)
@@ -312,16 +347,18 @@ func (e Executor) executeRepairInCurrentWorktree(ctx context.Context, action app
 	if relationship.Ahead > 0 {
 		return fmt.Errorf("local branch %s has %d unpushed commit(s); refusing to force-push", head, relationship.Ahead)
 	}
+	emitActionProgress(opts.Progress, app.ProgressLog, action, fmt.Sprintf("Pulling %s", head))
 	if err := e.git.PullRebase(ctx, opts.Remote, head); err != nil {
 		return fmt.Errorf("pull %s: %w", head, err)
 	}
-	if err := e.rebase(ctx, e.git, action, opts.Remote, head); err != nil {
+	if err := e.rebase(ctx, e.git, action, opts.Remote, head, opts.Progress); err != nil {
 		return err
 	}
+	emitActionProgress(opts.Progress, app.ProgressLog, action, fmt.Sprintf("Pushing %s", head))
 	if err := e.git.PushForceWithLease(ctx, opts.Remote, head); err != nil {
 		return fmt.Errorf("push %s: %w", head, err)
 	}
-	return e.updateBase(ctx, e.gh, action)
+	return e.updateBase(ctx, e.gh, action, opts.Progress)
 }
 
 func (e Executor) executeRepairInWorktree(ctx context.Context, action app.Action, opts runOptions) (err error) {
@@ -329,6 +366,7 @@ func (e Executor) executeRepairInWorktree(ctx context.Context, action app.Action
 	remoteHead := opts.Remote + "/" + head
 	path := filepath.Join(opts.WorktreeDir, worktreeName(action))
 
+	emitActionProgress(opts.Progress, app.ProgressLog, action, fmt.Sprintf("Creating worktree for %s", head))
 	worktreeMu.Lock()
 	if err := e.git.WorktreeAdd(ctx, path, remoteHead, "--detach"); err != nil {
 		worktreeMu.Unlock()
@@ -345,13 +383,14 @@ func (e Executor) executeRepairInWorktree(ctx context.Context, action app.Action
 
 	git := e.git.InDir(path)
 	gh := e.gh.InDir(path)
-	if err := e.rebase(ctx, git, action, opts.Remote, ""); err != nil {
+	if err := e.rebase(ctx, git, action, opts.Remote, "", opts.Progress); err != nil {
 		return err
 	}
+	emitActionProgress(opts.Progress, app.ProgressLog, action, fmt.Sprintf("Pushing %s", head))
 	if err := git.PushForceWithLeaseRefspec(ctx, opts.Remote, "HEAD:"+head); err != nil {
 		return fmt.Errorf("push %s: %w", head, err)
 	}
-	return e.updateBase(ctx, gh, action)
+	return e.updateBase(ctx, gh, action, opts.Progress)
 }
 
 func (e Executor) settleAction(ctx context.Context, action app.Action, opts runOptions) error {
@@ -365,6 +404,7 @@ func (e Executor) settleAction(ctx context.Context, action app.Action, opts runO
 
 	var lastErr error
 	for attempt := range settleAttempts {
+		emitActionProgress(opts.Progress, app.ProgressLog, action, fmt.Sprintf("Settling %s (%d/%d)", headRef, attempt+1, settleAttempts))
 		if err := e.git.Fetch(ctx, opts.Remote, refspec); err != nil {
 			lastErr = err
 		} else if ok, err := e.git.IsAncestor(ctx, baseRef, headRef); err != nil {
@@ -388,11 +428,12 @@ func (e Executor) settleAction(ctx context.Context, action app.Action, opts runO
 	return fmt.Errorf("settle %s: %w", headRef, lastErr)
 }
 
-func (e Executor) rebase(ctx context.Context, git gitrepo.Client, action app.Action, remote, branch string) error {
+func (e Executor) rebase(ctx context.Context, git gitrepo.Client, action app.Action, remote, branch string, progress app.ProgressSink) error {
 	newBase := action.NewBase
 	if newBase == "" {
 		newBase = action.PR.BaseRefName
 	}
+	emitActionProgress(progress, app.ProgressLog, action, fmt.Sprintf("Rebasing %s onto %s/%s", action.PR.HeadRefName, remote, newBase))
 	err := git.Rebase(ctx, gitrepo.RebaseOptions{
 		Onto:     remote + "/" + newBase,
 		Upstream: action.Upstream,
@@ -410,11 +451,12 @@ func (e Executor) rebase(ctx context.Context, git gitrepo.Client, action app.Act
 	return fmt.Errorf("rebase %s: %w", action.PR.HeadRefName, err)
 }
 
-func (e Executor) updateBase(ctx context.Context, gh ghcli.Client, action app.Action) error {
+func (e Executor) updateBase(ctx context.Context, gh ghcli.Client, action app.Action, progress app.ProgressSink) error {
 	newBase := action.NewBase
 	if newBase == "" || newBase == action.PR.BaseRefName {
 		return nil
 	}
+	emitActionProgress(progress, app.ProgressLog, action, fmt.Sprintf("Updating base for #%d to %s", action.PR.Number, newBase))
 	_, err := gh.Run(ctx, "pr", "edit", fmt.Sprint(action.PR.Number), "--base", newBase)
 	if err != nil {
 		return fmt.Errorf("update base for #%d: %w", action.PR.Number, err)
@@ -445,6 +487,50 @@ func sanitizePathComponent(value string) string {
 		return "branch"
 	}
 	return out
+}
+
+func emitProgress(sink app.ProgressSink, kind app.ProgressKind, phase, message string) {
+	app.EmitProgress(sink, app.ProgressEvent{
+		Kind:    kind,
+		Phase:   phase,
+		Message: message,
+	})
+}
+
+func emitActionProgress(sink app.ProgressSink, kind app.ProgressKind, action app.Action, message string) {
+	app.EmitProgress(sink, app.ProgressEvent{
+		Kind:     kind,
+		Phase:    "action",
+		Message:  message,
+		PRNumber: action.PR.Number,
+		ActionID: action.ID,
+	})
+}
+
+func actionRunningMessage(action app.Action) string {
+	switch action.Kind {
+	case app.ActionRepairPR:
+		target := action.NewBase
+		if target == "" {
+			target = action.PR.BaseRefName
+		}
+		return fmt.Sprintf("Repairing #%d %s onto %s", action.PR.Number, action.PR.HeadRefName, target)
+	case app.ActionUpdateBranch:
+		return fmt.Sprintf("Updating #%d %s", action.PR.Number, action.PR.HeadRefName)
+	default:
+		return fmt.Sprintf("Running %s for #%d", action.Kind, action.PR.Number)
+	}
+}
+
+func actionSuccessMessage(action app.Action) string {
+	switch action.Kind {
+	case app.ActionRepairPR:
+		return fmt.Sprintf("Repaired #%d %s", action.PR.Number, action.PR.HeadRefName)
+	case app.ActionUpdateBranch:
+		return fmt.Sprintf("Updated #%d %s", action.PR.Number, action.PR.HeadRefName)
+	default:
+		return fmt.Sprintf("Finished %s for #%d", action.Kind, action.PR.Number)
+	}
 }
 
 var _ app.Executor = Executor{}

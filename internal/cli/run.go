@@ -14,9 +14,9 @@ import (
 )
 
 var (
-	buildPlanFunc       = buildPlan
-	runSelectorFunc     = tui.RunSelector
-	executeSelectedFunc = executeSelectedPlan
+	buildPlanFunc   = buildPlan
+	runSelectorFunc = tui.RunSelector
+	executePlanFunc = executePlan
 )
 
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
@@ -30,26 +30,32 @@ func runConfig(ctx context.Context, cfg Config, stdout, stderr io.Writer) error 
 	case CommandTUI:
 		return runTUI(ctx, cfg, stdout, stderr)
 	case CommandList:
-		return runList(ctx, cfg, stdout)
+		return runList(ctx, cfg, stdout, stderr)
 	case CommandPlan:
-		return runPlan(ctx, cfg, stdout)
+		return runPlan(ctx, cfg, stdout, stderr)
 	case CommandMerge:
-		return runMerge(ctx, cfg, stdout)
+		return runMerge(ctx, cfg, stdout, stderr)
 	default:
 		return fmt.Errorf("unknown command: %s", cfg.Command)
 	}
 }
 
 func runTUI(ctx context.Context, cfg Config, stdout, _ io.Writer) error {
-	plan, err := buildPlanFunc(ctx, cfg)
-	if err != nil {
-		return err
-	}
-
-	loadPlan := func(ctx context.Context, includeClean bool) (*app.Plan, error) {
+	loadPlan := func(ctx context.Context, includeClean bool, progress app.ProgressSink) (*app.Plan, error) {
 		next := cfg
 		next.IncludeClean = includeClean
-		return buildPlanFunc(ctx, next)
+		return buildPlanFunc(ctx, next, progress)
+	}
+
+	plan, err := tui.RunPlanLoader(ctx, tui.PlanLoadOptions{
+		IncludeClean: cfg.IncludeClean,
+		LoadPlan:     loadPlan,
+		Output:       stdout,
+		NoColor:      cfg.NoColor,
+		Verbose:      cfg.Verbose,
+	})
+	if err != nil {
+		return err
 	}
 
 	result, err := runSelectorFunc(ctx, plan, tui.Options{
@@ -58,6 +64,7 @@ func runTUI(ctx context.Context, cfg Config, stdout, _ io.Writer) error {
 		LoadPlan:     loadPlan,
 		Output:       stdout,
 		NoColor:      cfg.NoColor,
+		Verbose:      cfg.Verbose,
 	})
 	if err != nil {
 		return err
@@ -65,11 +72,27 @@ func runTUI(ctx context.Context, cfg Config, stdout, _ io.Writer) error {
 	if result == nil {
 		return nil
 	}
-	return executeSelectedFunc(ctx, cfg, result.Plan, result.Parallel, stdout)
+	runResult, err := tui.RunExecution(ctx, result.Plan, tui.ExecutionOptions{
+		Parallel: result.Parallel,
+		Output:   stdout,
+		NoColor:  cfg.NoColor,
+		Verbose:  cfg.Verbose,
+		Execute: func(ctx context.Context, plan *app.Plan, parallel int, progress app.ProgressSink) (*app.RunResult, error) {
+			return executePlanFunc(ctx, cfg, plan, parallel, progress)
+		},
+	})
+	if runResult != nil {
+		if renderErr := output.RenderRunResult(stdout, runResult, cfg.Format, cfg.NoColor); renderErr != nil {
+			return renderErr
+		}
+	}
+	return err
 }
 
-func runList(ctx context.Context, cfg Config, stdout io.Writer) error {
-	plan, err := buildPlan(ctx, cfg)
+func runList(ctx context.Context, cfg Config, stdout, stderr io.Writer) error {
+	progress := commandProgress(cfg, stderr)
+	defer progress.Close()
+	plan, err := buildPlanFunc(ctx, cfg, progress.sink())
 	if err != nil {
 		return err
 	}
@@ -81,8 +104,10 @@ func runList(ctx context.Context, cfg Config, stdout io.Writer) error {
 	})
 }
 
-func runPlan(ctx context.Context, cfg Config, stdout io.Writer) error {
-	plan, err := buildPlan(ctx, cfg)
+func runPlan(ctx context.Context, cfg Config, stdout, stderr io.Writer) error {
+	progress := commandProgress(cfg, stderr)
+	defer progress.Close()
+	plan, err := buildPlanFunc(ctx, cfg, progress.sink())
 	if err != nil {
 		return err
 	}
@@ -96,15 +121,17 @@ func runPlan(ctx context.Context, cfg Config, stdout io.Writer) error {
 	})
 }
 
-func runMerge(ctx context.Context, cfg Config, stdout io.Writer) error {
+func runMerge(ctx context.Context, cfg Config, stdout, stderr io.Writer) error {
 	if cfg.DryRun {
-		return runPlan(ctx, cfg, stdout)
+		return runPlan(ctx, cfg, stdout, stderr)
 	}
 	if !cfg.Yes {
 		return fmt.Errorf("merge requires --yes until TUI confirmation is implemented")
 	}
 
-	plan, err := buildPlan(ctx, cfg)
+	progress := commandProgress(cfg, stderr)
+	defer progress.Close()
+	plan, err := buildPlanFunc(ctx, cfg, progress.sink())
 	if err != nil {
 		return err
 	}
@@ -113,28 +140,58 @@ func runMerge(ctx context.Context, cfg Config, stdout io.Writer) error {
 		return err
 	}
 
-	return executeSelectedFunc(ctx, cfg, plan, cfg.Parallel, stdout)
-}
-
-func executeSelectedPlan(ctx context.Context, cfg Config, plan *app.Plan, parallel int, stdout io.Writer) error {
-	runner := gitcmd.NewRunner()
-	executor := gitkitexec.New(runner)
-	result, err := executor.Execute(ctx, plan, app.ExecuteOptions{
-		Remote:   cfg.Remote,
-		Parallel: parallel,
-	})
+	result, err := executePlanFunc(ctx, cfg, plan, cfg.Parallel, progress.sink())
 	if result != nil {
-		if renderErr := output.RenderRunResult(stdout, result, cfg.Format); renderErr != nil {
+		if renderErr := output.RenderRunResult(stdout, result, cfg.Format, cfg.NoColor); renderErr != nil {
 			return renderErr
 		}
 	}
 	return err
 }
 
-func buildPlan(ctx context.Context, cfg Config) (*app.Plan, error) {
+func executePlan(ctx context.Context, cfg Config, plan *app.Plan, parallel int, progress app.ProgressSink) (*app.RunResult, error) {
+	runner := app.NewProgressRunner(gitcmd.NewRunner(), progress)
+	executor := gitkitexec.New(runner)
+	return executor.Execute(ctx, plan, app.ExecuteOptions{
+		Remote:   cfg.Remote,
+		Parallel: parallel,
+		Progress: progress,
+	})
+}
+
+func buildPlan(ctx context.Context, cfg Config, progress app.ProgressSink) (*app.Plan, error) {
 	if cfg.Repo != "" {
 		return nil, fmt.Errorf("--repo is not implemented yet")
 	}
-	store := gitkitstore.New(gitcmd.NewRunner())
-	return app.NewPlanner(store).BuildPlan(ctx, cfg.PlanOptions())
+	runner := app.NewProgressRunner(gitcmd.NewRunner(), progress)
+	store := gitkitstore.New(runner)
+	opts := cfg.PlanOptions()
+	opts.Progress = progress
+	return app.NewPlanner(store).BuildPlan(ctx, opts)
+}
+
+type commandProgressHandle struct {
+	progress *terminalProgress
+}
+
+func commandProgress(cfg Config, stderr io.Writer) commandProgressHandle {
+	if cfg.Format == output.FormatJSON {
+		return commandProgressHandle{}
+	}
+	return commandProgressHandle{
+		progress: newTerminalProgress(stderr, cfg.NoColor, cfg.Verbose),
+	}
+}
+
+func (h commandProgressHandle) sink() app.ProgressSink {
+	if h.progress == nil {
+		return nil
+	}
+	return h.progress
+}
+
+func (h commandProgressHandle) Close() {
+	if h.progress != nil {
+		h.progress.Close()
+	}
 }

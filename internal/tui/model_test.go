@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"github.com/134130/gh-domino/gitobj"
 	"github.com/134130/gh-domino/internal/app"
@@ -60,7 +61,7 @@ func TestModelCleanToggleReloadsPlanAndUpdatesPreview(t *testing.T) {
 	withClean := tuiTestPlan(true)
 	var requested []bool
 	m := NewModel(context.Background(), noClean, Options{
-		LoadPlan: func(_ context.Context, includeClean bool) (*app.Plan, error) {
+		LoadPlan: func(_ context.Context, includeClean bool, _ app.ProgressSink) (*app.Plan, error) {
 			requested = append(requested, includeClean)
 			if includeClean {
 				return withClean, nil
@@ -198,6 +199,13 @@ func TestModelQuitAndConfirmResult(t *testing.T) {
 	assertActionIDs(t, m.Preview(), []string{"repair-pr-52"})
 }
 
+func TestModelUsesMiniDotSpinner(t *testing.T) {
+	m := NewModel(context.Background(), tuiTestPlan(false), Options{})
+	if !reflect.DeepEqual(m.spinner.Spinner.Frames, spinner.MiniDot.Frames) {
+		t.Fatalf("spinner frames mismatch: %#v", m.spinner.Spinner.Frames)
+	}
+}
+
 func press(t *testing.T, m *Model, key string) tea.Cmd {
 	t.Helper()
 	model, cmd := m.Update(keyMsg(key))
@@ -214,7 +222,33 @@ func runCmd(t *testing.T, m *Model, cmd tea.Cmd) {
 	if cmd == nil {
 		t.Fatalf("expected command")
 	}
-	model, _ := m.Update(cmd())
+	msg := cmd()
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		messages := make(chan tea.Msg, len(batch))
+		for _, batchCmd := range batch {
+			go func(cmd tea.Cmd) {
+				messages <- cmd()
+			}(batchCmd)
+		}
+		for range batch {
+			model, nextCmd := m.Update(<-messages)
+			next, ok := model.(Model)
+			if !ok {
+				t.Fatalf("unexpected model type %T", model)
+			}
+			*m = next
+			if nextCmd != nil {
+				model, _ = m.Update(nextCmd())
+				next, ok = model.(Model)
+				if !ok {
+					t.Fatalf("unexpected model type %T", model)
+				}
+				*m = next
+			}
+		}
+		return
+	}
+	model, _ := m.Update(msg)
 	next, ok := model.(Model)
 	if !ok {
 		t.Fatalf("unexpected model type %T", model)
