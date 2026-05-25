@@ -10,37 +10,84 @@ import (
 )
 
 func TestRenderPlanHuman(t *testing.T) {
+	node := &stackedpr.Node{Value: pull(52, "bar", "stack-1", "stack-2")}
+	action := app.Action{
+		ID:       "repair-pr-52",
+		Kind:     app.ActionRepairPR,
+		PR:       node.Value,
+		NewBase:  "main",
+		Upstream: "abc123",
+		Reason:   app.ReasonMergedBase,
+	}
 	plan := &app.Plan{
-		Actions: []app.Action{{
-			ID:       "repair-pr-52",
-			Kind:     app.ActionRepairPR,
-			PR:       pull(52, "bar", "stack-1", "stack-2"),
-			NewBase:  "main",
-			Upstream: "abc123",
-			Reason:   app.ReasonMergedBase,
+		Roots: []*stackedpr.Node{node},
+		Pulls: []app.PullStatus{{
+			PR:      node.Value,
+			State:   app.PullStateBroken,
+			Reason:  app.ReasonMergedBase,
+			NewBase: "main",
 		}},
+		Actions: []app.Action{action},
+	}
+	selected := &app.Plan{
+		Roots:   plan.Roots,
+		Pulls:   plan.Pulls,
+		Actions: []app.Action{action},
 	}
 
 	var out strings.Builder
-	if err := RenderPlan(&out, plan, FormatHuman); err != nil {
+	if err := RenderPlan(&out, plan, selected, PlanOptions{Format: FormatHuman, NoColor: true}); err != nil {
 		t.Fatalf("RenderPlan returned error: %v", err)
 	}
 
-	want := "Actions\n  repair #52 stack-2 onto main (upstream abc123)\n"
+	want := "Pull Requests\n" +
+		"  ✘ #52 bar (stack-1 ← stack-2) · REPAIR merged_base → main\n" +
+		"\n" +
+		"Preview: 1 actions\n" +
+		"  repair #52 stack-2 → main\n"
 	if got := out.String(); got != want {
 		t.Fatalf("output mismatch\nwant: %q\n got: %q", want, got)
 	}
 }
 
 func TestRenderPlanHumanWarnings(t *testing.T) {
+	parent := &stackedpr.Node{Value: pull(52, "qux", "main", "stack-1")}
+	child := &stackedpr.Node{Value: pull(53, "baz", "stack-1", "stack-2")}
+	parent.Children = []*stackedpr.Node{child}
+	parentAction := app.Action{
+		ID:      "repair-pr-52",
+		Kind:    app.ActionRepairPR,
+		PR:      parent.Value,
+		NewBase: "main",
+		Reason:  app.ReasonMergedBase,
+	}
+	childAction := app.Action{
+		ID:        "repair-pr-53",
+		Kind:      app.ActionRepairPR,
+		PR:        child.Value,
+		NewBase:   "stack-1",
+		Reason:    app.ReasonParentDiverged,
+		DependsOn: []string{"repair-pr-52"},
+	}
 	plan := &app.Plan{
-		Actions: []app.Action{{
-			ID:      "repair-pr-53",
-			Kind:    app.ActionRepairPR,
-			PR:      pull(53, "baz", "stack-1", "stack-2"),
-			NewBase: "stack-1",
+		Roots: []*stackedpr.Node{parent},
+		Pulls: []app.PullStatus{{
+			PR:      parent.Value,
+			State:   app.PullStateBroken,
+			Reason:  app.ReasonMergedBase,
+			NewBase: "main",
+		}, {
+			PR:      child.Value,
+			State:   app.PullStateBroken,
 			Reason:  app.ReasonParentDiverged,
+			NewBase: "stack-1",
 		}},
+		Actions: []app.Action{parentAction, childAction},
+	}
+	selected := &app.Plan{
+		Roots:   plan.Roots,
+		Pulls:   plan.Pulls,
+		Actions: []app.Action{childAction},
 		Warnings: []app.SelectionWarning{{
 			Kind:             app.SelectionWarningUnselectedDependency,
 			PRNumber:         53,
@@ -55,15 +102,17 @@ func TestRenderPlanHumanWarnings(t *testing.T) {
 	}
 
 	var out strings.Builder
-	if err := RenderPlan(&out, plan, FormatHuman); err != nil {
+	if err := RenderPlan(&out, plan, selected, PlanOptions{Format: FormatHuman, NoColor: true}); err != nil {
 		t.Fatalf("RenderPlan returned error: %v", err)
 	}
 
-	want := "Actions\n" +
-		"  repair #53 stack-2 onto stack-1\n" +
+	want := "Pull Requests\n" +
+		"  ✘ #52 qux (main ← stack-1) · REPAIR merged_base → main\n" +
+		"  ! └── #53 baz (stack-1 ← stack-2) · warning · depends on #52\n" +
 		"\n" +
-		"Warnings\n" +
-		"  #53 has an unselected related action: repair #52 stack-1 onto main. Use --chain or select it explicitly.\n"
+		"Preview: 1 actions · 1 warnings\n" +
+		"  repair #53 stack-2 → stack-1\n" +
+		"  warning: #53 depends on unselected #52\n"
 	if got := out.String(); got != want {
 		t.Fatalf("output mismatch\nwant: %q\n got: %q", want, got)
 	}
@@ -88,7 +137,7 @@ func TestRenderPlanJSONWarnings(t *testing.T) {
 	}
 
 	var out strings.Builder
-	if err := RenderPlan(&out, plan, FormatJSON); err != nil {
+	if err := RenderPlan(&out, plan, plan, PlanOptions{Format: FormatJSON}); err != nil {
 		t.Fatalf("RenderPlan returned error: %v", err)
 	}
 
@@ -189,11 +238,13 @@ func TestRenderListFiltersBrokenWithTreeContext(t *testing.T) {
 	}
 
 	var out strings.Builder
-	if err := RenderList(&out, plan, ListOptions{Format: FormatHuman, State: "broken"}); err != nil {
+	if err := RenderList(&out, plan, ListOptions{Format: FormatHuman, State: "broken", NoColor: true}); err != nil {
 		t.Fatalf("RenderList returned error: %v", err)
 	}
 
-	want := "Pull Requests\n└─ #52 bar (main <- stack-1)\n   └─ #53 baz (stack-1 <- stack-2) [broken: parent_diverged -> stack-1]\n"
+	want := "Pull Requests\n" +
+		"  ✔︎ #52 bar (main ← stack-1)\n" +
+		"  ✘ └── #53 baz (stack-1 ← stack-2) · BROKEN parent_diverged → stack-1\n"
 	if got := out.String(); got != want {
 		t.Fatalf("output mismatch\nwant: %q\n got: %q", want, got)
 	}

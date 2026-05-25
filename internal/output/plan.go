@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/134130/gh-domino/internal/app"
-	"github.com/134130/gh-domino/internal/stackedpr"
+	"github.com/134130/gh-domino/internal/termrender"
 )
 
 type Format string
@@ -18,52 +18,40 @@ const (
 )
 
 type ListOptions struct {
-	Format Format
-	State  string
-	Flat   bool
+	Format  Format
+	State   string
+	Flat    bool
+	NoColor bool
+	Width   int
+}
+
+type PlanOptions struct {
+	Format  Format
+	NoColor bool
+	Width   int
 }
 
 func RenderList(w io.Writer, plan *app.Plan, opts ListOptions) error {
 	if opts.Format == FormatJSON {
 		return renderListJSON(w, plan)
 	}
-	if opts.Flat {
-		return renderListFlat(w, plan, opts.State)
-	}
-	return renderListTree(w, plan, opts.State)
+	_, err := io.WriteString(w, termrender.RenderList(plan, opts.State, opts.Flat, termrender.Options{
+		NoColor: opts.NoColor,
+		Width:   opts.Width,
+	}))
+	return err
 }
 
-func RenderPlan(w io.Writer, plan *app.Plan, format Format) error {
-	if format == FormatJSON {
-		return renderPlanJSON(w, plan)
+func RenderPlan(w io.Writer, plan, selectedPlan *app.Plan, opts PlanOptions) error {
+	if opts.Format == FormatJSON {
+		return renderPlanJSON(w, selectedPlan)
 	}
 
-	if _, err := fmt.Fprintln(w, "Actions"); err != nil {
-		return err
-	}
-	if len(plan.Actions) == 0 {
-		_, err := fmt.Fprintln(w, "  No actions.")
-		return err
-	}
-	for _, action := range plan.Actions {
-		if _, err := fmt.Fprintf(w, "  %s\n", actionLine(action)); err != nil {
-			return err
-		}
-	}
-	if len(plan.Warnings) > 0 {
-		if _, err := fmt.Fprintln(w, ""); err != nil {
-			return err
-		}
-		if _, err := fmt.Fprintln(w, "Warnings"); err != nil {
-			return err
-		}
-		for _, warning := range plan.Warnings {
-			if _, err := fmt.Fprintf(w, "  %s\n", warningLine(warning)); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
+	_, err := io.WriteString(w, termrender.RenderPlanSnapshot(plan, selectedPlan, termrender.Options{
+		NoColor: opts.NoColor,
+		Width:   opts.Width,
+	}))
+	return err
 }
 
 func RenderRunResult(w io.Writer, result *app.RunResult, format Format) error {
@@ -102,114 +90,6 @@ func RenderRunResult(w io.Writer, result *app.RunResult, format Format) error {
 		}
 	}
 	return nil
-}
-
-func renderListTree(w io.Writer, plan *app.Plan, state string) error {
-	statuses := statusesByPR(plan.Pulls)
-	if _, err := fmt.Fprintln(w, "Pull Requests"); err != nil {
-		return err
-	}
-	for i, root := range plan.Roots {
-		if err := renderTreeNode(w, root, statuses, state, "", i == len(plan.Roots)-1); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func renderTreeNode(w io.Writer, node *stackedpr.Node, statuses map[int]app.PullStatus, state, prefix string, last bool) error {
-	if !shouldRenderNode(node, statuses, state) {
-		return nil
-	}
-
-	connector := "├─ "
-	childPrefix := prefix + "│  "
-	if last {
-		connector = "└─ "
-		childPrefix = prefix + "   "
-	}
-	if _, err := fmt.Fprintf(w, "%s%s%s\n", prefix, connector, pullLine(statuses[node.Value.Number])); err != nil {
-		return err
-	}
-
-	children := visibleChildren(node.Children, statuses, state)
-	for i, child := range children {
-		if err := renderTreeNode(w, child, statuses, state, childPrefix, i == len(children)-1); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func renderListFlat(w io.Writer, plan *app.Plan, state string) error {
-	if _, err := fmt.Fprintln(w, "Pull Requests"); err != nil {
-		return err
-	}
-	for _, status := range plan.Pulls {
-		if !matchesState(status, state) {
-			continue
-		}
-		if _, err := fmt.Fprintf(w, "  %s\n", pullLine(status)); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func visibleChildren(nodes []*stackedpr.Node, statuses map[int]app.PullStatus, state string) []*stackedpr.Node {
-	children := make([]*stackedpr.Node, 0, len(nodes))
-	for _, node := range nodes {
-		if shouldRenderNode(node, statuses, state) {
-			children = append(children, node)
-		}
-	}
-	return children
-}
-
-func shouldRenderNode(node *stackedpr.Node, statuses map[int]app.PullStatus, state string) bool {
-	if matchesState(statuses[node.Value.Number], state) {
-		return true
-	}
-	for _, child := range node.Children {
-		if shouldRenderNode(child, statuses, state) {
-			return true
-		}
-	}
-	return false
-}
-
-func matchesState(status app.PullStatus, state string) bool {
-	switch state {
-	case "", "all":
-		return true
-	case "broken":
-		return status.State == app.PullStateBroken
-	case "clean":
-		return status.State == app.PullStateClean
-	case "updateable":
-		return status.State == app.PullStateUpdateable
-	default:
-		return false
-	}
-}
-
-func pullLine(status app.PullStatus) string {
-	pr := status.PR
-	suffix := ""
-	switch status.State {
-	case app.PullStateBroken:
-		if status.NewBase != "" {
-			suffix = fmt.Sprintf(" [broken: %s -> %s]", status.Reason, status.NewBase)
-		} else {
-			suffix = fmt.Sprintf(" [broken: %s]", status.Reason)
-		}
-	case app.PullStateUpdateable:
-		suffix = " [updateable]"
-	}
-	if status.OriginalBase != nil {
-		suffix += fmt.Sprintf(" [was on #%d]", status.OriginalBase.Number)
-	}
-	return fmt.Sprintf("#%d %s (%s <- %s)%s", pr.Number, pr.Title, pr.BaseRefName, pr.HeadRefName, suffix)
 }
 
 func actionLine(action app.Action) string {
@@ -417,14 +297,6 @@ func warningsJSON(warnings []app.SelectionWarning) []warningJSON {
 			DependencyBase:   warning.DependencyBase,
 			DependencyReason: string(warning.DependencyReason),
 		})
-	}
-	return out
-}
-
-func statusesByPR(statuses []app.PullStatus) map[int]app.PullStatus {
-	out := make(map[int]app.PullStatus, len(statuses))
-	for _, status := range statuses {
-		out[status.PR.Number] = status
 	}
 	return out
 }

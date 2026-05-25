@@ -57,6 +57,7 @@ func runTUI(ctx context.Context, cfg Config, stdout, _ io.Writer) error {
 		Parallel:     cfg.Parallel,
 		LoadPlan:     loadPlan,
 		Output:       stdout,
+		NoColor:      cfg.NoColor,
 	})
 	if err != nil {
 		return err
@@ -73,9 +74,10 @@ func runList(ctx context.Context, cfg Config, stdout io.Writer) error {
 		return err
 	}
 	return output.RenderList(stdout, plan, output.ListOptions{
-		Format: cfg.Format,
-		State:  cfg.State,
-		Flat:   cfg.Flat,
+		Format:  cfg.Format,
+		State:   cfg.State,
+		Flat:    cfg.Flat,
+		NoColor: cfg.NoColor,
 	})
 }
 
@@ -84,11 +86,14 @@ func runPlan(ctx context.Context, cfg Config, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	plan, err = plan.Select(cfg.Selection())
+	selected, err := plan.Select(cfg.Selection())
 	if err != nil {
 		return err
 	}
-	return output.RenderPlan(stdout, plan, cfg.Format)
+	return output.RenderPlan(stdout, plan, selected, output.PlanOptions{
+		Format:  cfg.Format,
+		NoColor: cfg.NoColor,
+	})
 }
 
 func runMerge(ctx context.Context, cfg Config, stdout io.Writer) error {
