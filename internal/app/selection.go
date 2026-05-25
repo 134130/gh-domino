@@ -19,44 +19,71 @@ func (p *Plan) Select(selection Selection) (*Plan, error) {
 		return selected, nil
 	}
 
-	if len(selection.Items) == 0 {
-		selected := p.clone()
-		selected.Warnings = selectionWarnings(selected.Actions, p.Actions)
-		return selected, nil
-	}
-
 	tree := indexTree(p.Roots)
 	selectedPRs := map[int]struct{}{}
-	for _, item := range selection.Items {
-		node, ok := tree.nodes[item.PRNumber]
-		if !ok {
-			return nil, fmt.Errorf("PR #%d was not found in the dependency tree", item.PRNumber)
+	if len(selection.Items) == 0 {
+		for prNumber := range tree.nodes {
+			selectedPRs[prNumber] = struct{}{}
 		}
+		for _, status := range p.Pulls {
+			selectedPRs[status.PR.Number] = struct{}{}
+		}
+		for _, action := range p.Actions {
+			selectedPRs[action.PR.Number] = struct{}{}
+		}
+	} else {
+		for _, item := range selection.Items {
+			node, ok := tree.nodes[item.PRNumber]
+			if !ok {
+				return nil, fmt.Errorf("PR #%d was not found in the dependency tree", item.PRNumber)
+			}
 
-		switch item.Mode {
-		case SelectNode:
-			selectedPRs[item.PRNumber] = struct{}{}
-		case SelectSubtree:
-			collectSubtreePRs(node, selectedPRs)
-		case SelectChain:
-			collectChainPRs(item.PRNumber, tree.parents, selectedPRs)
-		default:
-			return nil, fmt.Errorf("unsupported selection mode: %s", item.Mode)
+			switch item.Mode {
+			case SelectNode:
+				selectedPRs[item.PRNumber] = struct{}{}
+			case SelectSubtree:
+				collectSubtreePRs(node, selectedPRs)
+			case SelectChain:
+				collectChainPRs(item.PRNumber, tree.parents, selectedPRs)
+			default:
+				return nil, fmt.Errorf("unsupported selection mode: %s", item.Mode)
+			}
 		}
 	}
 
 	selected := p.clone()
 	selected.Actions = nil
 	selectedIDs := map[string]struct{}{}
-	for _, action := range p.Actions {
-		if _, ok := selectedPRs[action.PR.Number]; !ok {
+
+	currentActionsByPR := actionsByPRFrom(p.Actions)
+	selectedActionByHead := map[string]string{}
+	for _, status := range p.orderedPullStatuses() {
+		if _, ok := selectedPRs[status.PR.Number]; !ok {
 			continue
 		}
+
+		action, ok := currentActionsByPR[status.PR.Number]
+		if !ok {
+			parentActionID := selectedActionByHead[status.PR.BaseRefName]
+			if parentActionID == "" {
+				continue
+			}
+			action = Action{
+				ID:        fmt.Sprintf("repair-pr-%d", status.PR.Number),
+				Kind:      ActionRepairPR,
+				PR:        status.PR,
+				NewBase:   status.PR.BaseRefName,
+				Reason:    ReasonParentWillChange,
+				DependsOn: []string{parentActionID},
+			}
+		}
+
 		if _, ok := selectedIDs[action.ID]; ok {
 			continue
 		}
 		selected.Actions = append(selected.Actions, action)
 		selectedIDs[action.ID] = struct{}{}
+		selectedActionByHead[action.PR.HeadRefName] = action.ID
 	}
 	selected.Warnings = selectionWarnings(selected.Actions, p.Actions)
 	return selected, nil
@@ -108,6 +135,81 @@ func actionsByIDFrom(actions []Action) map[string]Action {
 	out := make(map[string]Action, len(actions))
 	for _, action := range actions {
 		out[action.ID] = action
+	}
+	return out
+}
+
+func actionsByPRFrom(actions []Action) map[int]Action {
+	out := make(map[int]Action, len(actions))
+	for _, action := range actions {
+		out[action.PR.Number] = action
+	}
+	return out
+}
+
+func (p *Plan) orderedPullStatuses() []PullStatus {
+	statusesByPR := make(map[int]PullStatus, len(p.Pulls))
+	for _, status := range p.Pulls {
+		statusesByPR[status.PR.Number] = status
+	}
+
+	flat := flattenPlanTree(p.Roots)
+	statuses := make([]PullStatus, 0, len(flat))
+	seen := map[int]struct{}{}
+	for _, node := range flat {
+		if node == nil {
+			continue
+		}
+		pr := node.Value
+		status, ok := statusesByPR[pr.Number]
+		if !ok {
+			status = PullStatus{PR: pr, OriginalBase: node.OriginalBase, State: PullStateClean}
+		}
+		statuses = append(statuses, status)
+		seen[pr.Number] = struct{}{}
+	}
+
+	for _, status := range p.Pulls {
+		if _, ok := seen[status.PR.Number]; ok {
+			continue
+		}
+		statuses = append(statuses, status)
+		seen[status.PR.Number] = struct{}{}
+	}
+	for _, action := range p.Actions {
+		if _, ok := seen[action.PR.Number]; ok {
+			continue
+		}
+		state := PullStateBroken
+		if action.Kind == ActionUpdateBranch {
+			state = PullStateUpdateable
+		}
+		statuses = append(statuses, PullStatus{
+			PR:       action.PR,
+			State:    state,
+			Reason:   action.Reason,
+			NewBase:  action.NewBase,
+			Upstream: action.Upstream,
+		})
+		seen[action.PR.Number] = struct{}{}
+	}
+	return statuses
+}
+
+func flattenPlanTree(roots []*stackedpr.Node) []*stackedpr.Node {
+	var out []*stackedpr.Node
+	var walk func(*stackedpr.Node)
+	walk = func(node *stackedpr.Node) {
+		if node == nil {
+			return
+		}
+		out = append(out, node)
+		for _, child := range node.Children {
+			walk(child)
+		}
+	}
+	for _, root := range roots {
+		walk(root)
 	}
 	return out
 }

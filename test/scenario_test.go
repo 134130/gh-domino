@@ -106,7 +106,7 @@ func TestHarnessRepairsRemoteOnlyHeadBranch(t *testing.T) {
 	assert.Equal(t, "main", h.PRBase(2))
 }
 
-func TestHarnessWarnsAndExecutesUnselectedDirectDependencyAgainstCurrentParent(t *testing.T) {
+func TestHarnessCleanDescendantSelectionDoesNotCreateParentFollowUp(t *testing.T) {
 	h := harness.New(t)
 	h.Branch("stack-1", "origin/main")
 	h.Commit("stack-1", "parent.txt", "parent\n")
@@ -130,12 +130,11 @@ func TestHarnessWarnsAndExecutesUnselectedDirectDependencyAgainstCurrentParent(t
 		Mode:     app.SelectNode,
 	}}})
 	require.NoError(t, err)
-	assert.Equal(t, []string{"repair-pr-3"}, actionIDs(selected.Actions))
-	require.Len(t, selected.Warnings, 1)
-	assert.Equal(t, "repair-pr-2", selected.Warnings[0].DependencyID)
+	assert.Empty(t, actionIDs(selected.Actions))
+	assert.Empty(t, selected.Warnings)
 
 	result := h.Execute(selected, app.ExecuteOptions{})
-	assertActionStatuses(t, result, []app.ActionStatus{app.ActionStatusSuccess})
+	assertActionStatuses(t, result, []app.ActionStatus{})
 	assert.Equal(t, before, h.Ref("origin/stack-3"))
 	assert.Equal(t, "stack-2", h.PRBase(3))
 }

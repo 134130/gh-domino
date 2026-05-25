@@ -74,7 +74,6 @@ func (p Planner) Build(ctx context.Context, snapshot Snapshot, opts PlanOptions)
 	}
 
 	actionByHead := map[string]string{}
-	projectedRebased := map[string]bool{}
 	processed := map[int]bool{}
 
 	var walk func(*stackedpr.Node) error
@@ -89,7 +88,7 @@ func (p Planner) Build(ctx context.Context, snapshot Snapshot, opts PlanOptions)
 		}
 		processed[pr.Number] = true
 
-		status, err := p.classify(ctx, pr, node.OriginalBase, prByHead, mergedByHead, headSHAs, projectedRebased, snapshot.MergedPullRequests, opts)
+		status, err := p.classify(ctx, pr, node.OriginalBase, prByHead, mergedByHead, headSHAs, snapshot.MergedPullRequests, opts)
 		if err != nil {
 			return err
 		}
@@ -106,7 +105,6 @@ func (p Planner) Build(ctx context.Context, snapshot Snapshot, opts PlanOptions)
 				Upstream: status.Upstream,
 				Reason:   status.Reason,
 			}
-			projectedRebased[pr.HeadRefName] = true
 
 		case PullStateUpdateable:
 			action = &Action{
@@ -149,7 +147,6 @@ func (p Planner) classify(
 	prByHead map[string]gitobj.PullRequest,
 	mergedByHead map[string]gitobj.PullRequest,
 	headSHAs map[string]string,
-	projectedRebased map[string]bool,
 	mergedPRs []gitobj.PullRequest,
 	opts PlanOptions,
 ) (PullStatus, error) {
@@ -166,7 +163,6 @@ func (p Planner) classify(
 		prByHead,
 		mergedByHead,
 		headSHAs,
-		projectedRebased,
 		mergedPRs,
 		opts,
 	)
@@ -200,7 +196,6 @@ func (p Planner) determinePRState(
 	prByHead map[string]gitobj.PullRequest,
 	mergedByHead map[string]gitobj.PullRequest,
 	headSHAs map[string]string,
-	projectedRebased map[string]bool,
 	mergedPRs []gitobj.PullRequest,
 	opts PlanOptions,
 ) (isBroken bool, reason Reason, newBase string, upstream string, err error) {
@@ -239,10 +234,6 @@ func (p Planner) determinePRState(
 		if mergeBase != baseShaOnOrigin {
 			return true, ReasonParentDiverged, "", "", nil
 		}
-	}
-
-	if parentPR, ok := prByHead[pr.BaseRefName]; ok && projectedRebased[parentPR.HeadRefName] {
-		return true, ReasonParentWillChange, "", "", nil
 	}
 
 	defaultBranch, err := p.store.DefaultBranch(ctx, opts.Remote)

@@ -20,12 +20,11 @@ var (
 	dimStyle     = lipgloss.NewStyle().Faint(true)
 	selectedMark = lipgloss.NewStyle().Bold(true)
 
-	repairStyle    = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(3)).Bold(true)
-	dependentStyle = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(3)).Bold(true)
-	updateStyle    = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(3)).Bold(true)
-	warningStyle   = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(3)).Bold(true)
-	cleanStyle     = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(2)).Bold(true)
-	mergedStyle    = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(5)).Bold(true)
+	repairStyle  = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(3)).Bold(true)
+	updateStyle  = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(3)).Bold(true)
+	warningStyle = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(3)).Bold(true)
+	cleanStyle   = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(2)).Bold(true)
+	mergedStyle  = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(5)).Bold(true)
 
 	baseBranchStyle = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(6))
 	headBranchStyle = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(4))

@@ -41,8 +41,29 @@ func TestPlanSelectNoneSelectsNoActions(t *testing.T) {
 	}
 }
 
-func TestPlanSelectNodeDoesNotIncludeDependencies(t *testing.T) {
+func TestPlanSelectCleanNodeCreatesNoAction(t *testing.T) {
 	plan := selectionTestPlan()
+
+	selected, err := plan.Select(Selection{Items: []SelectionItem{{
+		PRNumber: 53,
+		Mode:     SelectNode,
+	}}})
+	if err != nil {
+		t.Fatalf("Select returned error: %v", err)
+	}
+
+	got := actionIDs(selected.Actions)
+	want := []string{}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("selected actions mismatch\nwant: %#v\n got: %#v", want, got)
+	}
+	if len(selected.Warnings) != 0 {
+		t.Fatalf("expected no warnings, got %#v", selected.Warnings)
+	}
+}
+
+func TestPlanSelectBrokenNodeWarnsAboutUnselectedDependency(t *testing.T) {
+	plan := dependencyWarningTestPlan()
 
 	selected, err := plan.Select(Selection{Items: []SelectionItem{{
 		PRNumber: 53,
@@ -91,10 +112,10 @@ func TestPlanSelectSubtreeSelectsNodeAndDescendants(t *testing.T) {
 }
 
 func TestPlanSelectChainSelectsAncestorsOnly(t *testing.T) {
-	plan := chainSelectionTestPlan()
+	plan := selectionTestPlan()
 
 	selected, err := plan.Select(Selection{Items: []SelectionItem{{
-		PRNumber: 56,
+		PRNumber: 53,
 		Mode:     SelectChain,
 	}}})
 	if err != nil {
@@ -102,7 +123,7 @@ func TestPlanSelectChainSelectsAncestorsOnly(t *testing.T) {
 	}
 
 	got := actionIDs(selected.Actions)
-	want := []string{"repair-pr-52", "repair-pr-53", "repair-pr-56"}
+	want := []string{"repair-pr-52", "repair-pr-53"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("selected actions mismatch\nwant: %#v\n got: %#v", want, got)
 	}
@@ -162,9 +183,8 @@ func selectionTestPlan() *Plan {
 			State:  PullStateBroken,
 			Reason: ReasonMergedBase,
 		}, {
-			PR:     child.Value,
-			State:  PullStateBroken,
-			Reason: ReasonParentDiverged,
+			PR:    child.Value,
+			State: PullStateClean,
 		}, {
 			PR:    other.Value,
 			State: PullStateUpdateable,
@@ -176,13 +196,6 @@ func selectionTestPlan() *Plan {
 			NewBase: "main",
 			Reason:  ReasonMergedBase,
 		}, {
-			ID:        "repair-pr-53",
-			Kind:      ActionRepairPR,
-			PR:        child.Value,
-			NewBase:   "stack-1",
-			Reason:    ReasonParentDiverged,
-			DependsOn: []string{"repair-pr-52"},
-		}, {
 			ID:     "update-branch-54",
 			Kind:   ActionUpdateBranch,
 			PR:     other.Value,
@@ -191,16 +204,22 @@ func selectionTestPlan() *Plan {
 	}
 }
 
-func chainSelectionTestPlan() *Plan {
+func dependencyWarningTestPlan() *Plan {
 	root := &stackedpr.Node{Value: pr(52, "bar", "main", "stack-1")}
 	child := &stackedpr.Node{Value: pr(53, "baz", "stack-1", "stack-2")}
-	sibling := &stackedpr.Node{Value: pr(55, "sibling", "stack-1", "sibling")}
-	grandchild := &stackedpr.Node{Value: pr(56, "quux", "stack-2", "stack-3")}
-	root.Children = []*stackedpr.Node{child, sibling}
-	child.Children = []*stackedpr.Node{grandchild}
+	root.Children = []*stackedpr.Node{child}
 
 	return &Plan{
 		Roots: []*stackedpr.Node{root},
+		Pulls: []PullStatus{{
+			PR:     root.Value,
+			State:  PullStateBroken,
+			Reason: ReasonMergedBase,
+		}, {
+			PR:     child.Value,
+			State:  PullStateBroken,
+			Reason: ReasonParentDiverged,
+		}},
 		Actions: []Action{{
 			ID:      "repair-pr-52",
 			Kind:    ActionRepairPR,
@@ -214,20 +233,6 @@ func chainSelectionTestPlan() *Plan {
 			NewBase:   "stack-1",
 			Reason:    ReasonParentDiverged,
 			DependsOn: []string{"repair-pr-52"},
-		}, {
-			ID:        "repair-pr-55",
-			Kind:      ActionRepairPR,
-			PR:        sibling.Value,
-			NewBase:   "stack-1",
-			Reason:    ReasonParentDiverged,
-			DependsOn: []string{"repair-pr-52"},
-		}, {
-			ID:        "repair-pr-56",
-			Kind:      ActionRepairPR,
-			PR:        grandchild.Value,
-			NewBase:   "stack-2",
-			Reason:    ReasonParentDiverged,
-			DependsOn: []string{"repair-pr-53"},
 		}},
 	}
 }

@@ -12,7 +12,7 @@ import (
 	"github.com/134130/gh-domino/internal/stackedpr"
 )
 
-func TestModelToggleCurrentModeBuildsSelection(t *testing.T) {
+func TestModelToggleCurrentModeTogglesRanges(t *testing.T) {
 	m := NewModel(context.Background(), tuiTestPlan(false), Options{})
 
 	press(t, &m, " ")
@@ -23,17 +23,20 @@ func TestModelToggleCurrentModeBuildsSelection(t *testing.T) {
 
 	press(t, &m, "m")
 	press(t, &m, " ")
-	assertSelection(t, m.Selection(), []app.SelectionItem{{
-		PRNumber: 52,
-		Mode:     app.SelectSubtree,
-	}})
+	assertSelection(t, m.Selection(), []app.SelectionItem{
+		{PRNumber: 52, Mode: app.SelectNode},
+		{PRNumber: 53, Mode: app.SelectNode},
+	})
 
+	m = NewModel(context.Background(), tuiTestPlan(false), Options{})
 	press(t, &m, "m")
+	press(t, &m, "m")
+	press(t, &m, "j")
 	press(t, &m, " ")
-	assertSelection(t, m.Selection(), []app.SelectionItem{{
-		PRNumber: 52,
-		Mode:     app.SelectChain,
-	}})
+	assertSelection(t, m.Selection(), []app.SelectionItem{
+		{PRNumber: 52, Mode: app.SelectNode},
+		{PRNumber: 53, Mode: app.SelectNode},
+	})
 }
 
 func TestModelSubtreeAndChainPreviewActions(t *testing.T) {
@@ -67,7 +70,7 @@ func TestModelCleanToggleReloadsPlanAndUpdatesPreview(t *testing.T) {
 	})
 
 	press(t, &m, "a")
-	assertActionIDs(t, m.Preview(), []string{"repair-pr-52", "repair-pr-53"})
+	assertActionIDs(t, m.Preview(), []string{"repair-pr-52"})
 
 	cmd := press(t, &m, "c")
 	runCmd(t, &m, cmd)
@@ -79,48 +82,68 @@ func TestModelCleanToggleReloadsPlanAndUpdatesPreview(t *testing.T) {
 	}
 
 	press(t, &m, "a")
-	assertActionIDs(t, m.Preview(), []string{"repair-pr-52", "repair-pr-53", "update-branch-54"})
+	assertActionIDs(t, m.Preview(), []string{"repair-pr-52", "update-branch-54"})
 
 	cmd = press(t, &m, "c")
 	runCmd(t, &m, cmd)
 	if m.IncludeClean() {
 		t.Fatalf("expected clean updates to be excluded")
 	}
-	assertActionIDs(t, m.Preview(), []string{"repair-pr-52", "repair-pr-53"})
+	assertActionIDs(t, m.Preview(), []string{"repair-pr-52"})
 }
 
-func TestModelPreviewWarningsAreVisible(t *testing.T) {
+func TestModelCleanNodeSelectionCreatesNoActionOrWarning(t *testing.T) {
 	m := NewModel(context.Background(), tuiTestPlan(false), Options{})
 	m.width = 140
 
 	press(t, &m, "j")
 	press(t, &m, " ")
 
-	if got := len(m.Preview().Warnings); got != 1 {
-		t.Fatalf("expected 1 warning, got %d", got)
+	if got := len(m.Preview().Actions); got != 0 {
+		t.Fatalf("expected no actions, got %d", got)
 	}
-	if !strings.Contains(m.renderPreview(), "warning: #53 depends on unselected #52") {
-		t.Fatalf("expected preview to render warning, got %q", m.renderPreview())
+	if got := len(m.Preview().Warnings); got != 0 {
+		t.Fatalf("expected no warnings, got %d", got)
 	}
 	row := m.renderRow(1)
-	if !strings.Contains(row, "depends on") {
-		t.Fatalf("expected warning row dependency reason, got %q", row)
+	if strings.Contains(row, "depends on") {
+		t.Fatalf("did not expect warning row dependency reason, got %q", row)
 	}
-	if strings.Contains(row, "base changed") {
-		t.Fatalf("did not expect warning row to show base changed, got %q", row)
+	if strings.Contains(row, "after parent repair") {
+		t.Fatalf("did not expect follow-up reason for clean-only selection, got %q", row)
 	}
 }
 
-func TestModelDependentRepairIsNotRenderedAsCross(t *testing.T) {
+func TestModelSelectedParentProjectsChildFollowUpRow(t *testing.T) {
 	m := NewModel(context.Background(), tuiTestPlan(false), Options{})
 	m.width = 140
 
+	press(t, &m, " ")
+
+	assertActionIDs(t, m.Preview(), []string{"repair-pr-52"})
 	row := m.renderRow(1)
-	if strings.Contains(row, "✘") {
-		t.Fatalf("did not expect dependent repair to render as cross, got %q", row)
+	if !strings.Contains(row, "✘") {
+		t.Fatalf("expected projected follow-up repair to render as cross, got %q", row)
 	}
 	if !strings.Contains(row, "after parent repair") {
-		t.Fatalf("expected dependent repair reason, got %q", row)
+		t.Fatalf("expected projected follow-up reason, got %q", row)
+	}
+}
+
+func TestModelSelectedSubtreeShowsFollowUpAsRepairCandidate(t *testing.T) {
+	m := NewModel(context.Background(), tuiTestPlan(false), Options{})
+	m.width = 140
+
+	press(t, &m, "m")
+	press(t, &m, " ")
+
+	assertActionIDs(t, m.Preview(), []string{"repair-pr-52", "repair-pr-53"})
+	row := m.renderRow(1)
+	if !strings.Contains(row, "✘") {
+		t.Fatalf("expected follow-up repair to render as cross, got %q", row)
+	}
+	if !strings.Contains(row, "after parent repair") {
+		t.Fatalf("expected follow-up reason, got %q", row)
 	}
 }
 
@@ -156,7 +179,7 @@ func TestModelQuitAndConfirmResult(t *testing.T) {
 	if m.Parallel() != 3 {
 		t.Fatalf("parallel mismatch: %d", m.Parallel())
 	}
-	assertActionIDs(t, m.Preview(), []string{"repair-pr-52", "repair-pr-53"})
+	assertActionIDs(t, m.Preview(), []string{"repair-pr-52"})
 }
 
 func press(t *testing.T, m *Model, key string) tea.Cmd {
@@ -238,10 +261,8 @@ func tuiTestPlan(includeClean bool) *app.Plan {
 			Reason:  app.ReasonMergedBase,
 			NewBase: "main",
 		}, {
-			PR:      child.Value,
-			State:   app.PullStateBroken,
-			Reason:  app.ReasonParentWillChange,
-			NewBase: "stack-1",
+			PR:    child.Value,
+			State: app.PullStateClean,
 		}, {
 			PR:    other.Value,
 			State: app.PullStateClean,
@@ -252,13 +273,6 @@ func tuiTestPlan(includeClean bool) *app.Plan {
 			PR:      root.Value,
 			NewBase: "main",
 			Reason:  app.ReasonMergedBase,
-		}, {
-			ID:        "repair-pr-53",
-			Kind:      app.ActionRepairPR,
-			PR:        child.Value,
-			NewBase:   "stack-1",
-			Reason:    app.ReasonParentWillChange,
-			DependsOn: []string{"repair-pr-52"},
 		}},
 	}
 	if includeClean {

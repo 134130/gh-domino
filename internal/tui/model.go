@@ -66,11 +66,12 @@ type Model struct {
 	flat       []FlatNode
 	statusByPR map[int]app.PullStatus
 	actionByPR map[int]app.Action
+	parentByPR map[int]int
 
 	mode         app.SelectionMode
 	includeClean bool
 	parallel     int
-	selected     map[int]app.SelectionMode
+	selected     map[int]bool
 
 	cursor int
 	offset int
@@ -109,7 +110,7 @@ func NewModel(ctx context.Context, plan *app.Plan, opts Options) Model {
 		mode:         app.SelectNode,
 		includeClean: opts.IncludeClean,
 		parallel:     parallel,
-		selected:     make(map[int]app.SelectionMode),
+		selected:     make(map[int]bool),
 	}
 	m.setPlan(plan)
 	m.refreshPreview()
@@ -261,13 +262,12 @@ func (m Model) Selection() app.Selection {
 	items := make([]app.SelectionItem, 0, len(m.selected))
 	for _, fn := range m.flat {
 		prNumber := fn.Node.Value.Number
-		mode, ok := m.selected[prNumber]
-		if !ok {
+		if !m.selected[prNumber] {
 			continue
 		}
 		items = append(items, app.SelectionItem{
 			PRNumber: prNumber,
-			Mode:     mode,
+			Mode:     app.SelectNode,
 		})
 	}
 	if len(items) == 0 {
@@ -309,6 +309,7 @@ func (m *Model) setPlan(plan *app.Plan) {
 	m.flat = flattenTree(plan.Roots)
 	m.statusByPR = statusesByPR(plan.Pulls)
 	m.actionByPR = actionsByPR(plan.Actions)
+	m.parentByPR = parentsByPR(plan.Roots)
 	if m.cursor >= len(m.flat) {
 		m.cursor = max(0, len(m.flat)-1)
 	}
@@ -329,12 +330,46 @@ func (m *Model) toggleCurrent() {
 	if len(m.flat) == 0 {
 		return
 	}
-	prNumber := m.flat[m.cursor].Node.Value.Number
-	if selectedMode, ok := m.selected[prNumber]; ok && selectedMode == m.mode {
-		delete(m.selected, prNumber)
+
+	targets := m.currentToggleTargets()
+	allSelected := len(targets) > 0
+	for _, prNumber := range targets {
+		if !m.selected[prNumber] {
+			allSelected = false
+			break
+		}
+	}
+	if allSelected {
+		for _, prNumber := range targets {
+			delete(m.selected, prNumber)
+		}
 		return
 	}
-	m.selected[prNumber] = m.mode
+	for _, prNumber := range targets {
+		m.selected[prNumber] = true
+	}
+}
+
+func (m Model) currentToggleTargets() []int {
+	if len(m.flat) == 0 {
+		return nil
+	}
+	node := m.flat[m.cursor].Node
+	switch m.mode {
+	case app.SelectSubtree:
+		var targets []int
+		collectSubtreeNumbers(node, &targets)
+		return targets
+	case app.SelectChain:
+		var targets []int
+		for current := node.Value.Number; current != 0; current = m.parentByPR[current] {
+			targets = append(targets, current)
+		}
+		slices.Reverse(targets)
+		return targets
+	default:
+		return []int{node.Value.Number}
+	}
 }
 
 func (m *Model) cycleMode() {
@@ -354,7 +389,7 @@ func (m *Model) toggleAllActionable() {
 	}
 	allSelected := true
 	for prNumber := range m.actionByPR {
-		if _, ok := m.selected[prNumber]; !ok {
+		if !m.selected[prNumber] {
 			allSelected = false
 			break
 		}
@@ -366,7 +401,7 @@ func (m *Model) toggleAllActionable() {
 		return
 	}
 	for prNumber := range m.actionByPR {
-		m.selected[prNumber] = app.SelectNode
+		m.selected[prNumber] = true
 	}
 }
 
@@ -460,7 +495,10 @@ func (m Model) renderRow(i int) string {
 	pr := fn.Node.Value
 	status := m.statusByPR[pr.Number]
 	warning, hasWarning := warningForPR(m.preview, pr.Number)
-	symbol, label, style := m.rowStatus(pr.Number, hasWarning)
+	currentAction, hasCurrentAction := m.actionByPR[pr.Number]
+	previewAction, hasPreviewAction := previewActionForPR(m.preview, pr.Number)
+	displayAction, hasDisplayAction := m.displayActionForRow(pr, currentAction, hasCurrentAction, previewAction, hasPreviewAction)
+	symbol, label, style := rowStatus(hasWarning, displayAction, hasDisplayAction)
 	cursorActive := i == m.cursor
 	bg := cursorBg(m.isDark)
 
@@ -503,6 +541,9 @@ func (m Model) renderRow(i int) string {
 	row.WriteString(withCursorBg(headBranchStyle).Render(pr.HeadRefName))
 	row.WriteString(plain(")"))
 	row.WriteString(reasonSuffix(label, status, fn.Node.OriginalBase, warning, hasWarning, plain, withCursorBg))
+	if hasDisplayAction && !hasCurrentAction && displayAction.Reason == app.ReasonParentWillChange {
+		row.WriteString(plain(" · after parent repair"))
+	}
 	line := row.String()
 
 	width := m.width
@@ -522,22 +563,72 @@ func (m Model) renderRow(i int) string {
 	return line
 }
 
-func (m Model) rowStatus(prNumber int, hasWarning bool) (symbol, label string, style lipgloss.Style) {
+func (m Model) displayActionForRow(
+	pr gitobj.PullRequest,
+	currentAction app.Action,
+	hasCurrentAction bool,
+	previewAction app.Action,
+	hasPreviewAction bool,
+) (app.Action, bool) {
+	if hasCurrentAction {
+		return currentAction, true
+	}
+	if hasPreviewAction && previewAction.Reason == app.ReasonParentWillChange {
+		return previewAction, true
+	}
+	return projectedFollowUpActionForPR(m.preview, pr)
+}
+
+func rowStatus(hasWarning bool, action app.Action, hasAction bool) (symbol, label string, style lipgloss.Style) {
 	if hasWarning {
 		return "!", "WARN", warningStyle
 	}
-	if action, ok := m.actionByPR[prNumber]; ok {
+	if hasAction {
 		switch action.Kind {
 		case app.ActionRepairPR:
-			if action.Reason == app.ReasonParentWillChange {
-				return "•", "DEPENDENT", dependentStyle
-			}
 			return "✘", "REPAIR", repairStyle
 		case app.ActionUpdateBranch:
 			return "✔︎", "UPDATE", updateStyle
 		}
 	}
 	return "✔︎", "CLEAN", cleanStyle
+}
+
+func previewActionForPR(plan *app.Plan, prNumber int) (app.Action, bool) {
+	if plan == nil {
+		return app.Action{}, false
+	}
+	for _, action := range plan.Actions {
+		if action.PR.Number == prNumber {
+			return action, true
+		}
+	}
+	return app.Action{}, false
+}
+
+func projectedFollowUpActionForPR(plan *app.Plan, pr gitobj.PullRequest) (app.Action, bool) {
+	if plan == nil {
+		return app.Action{}, false
+	}
+	for _, action := range plan.Actions {
+		if action.PR.Number == pr.Number {
+			return app.Action{}, false
+		}
+	}
+	for _, action := range plan.Actions {
+		if action.PR.Number == pr.Number || action.PR.HeadRefName != pr.BaseRefName {
+			continue
+		}
+		return app.Action{
+			ID:        fmt.Sprintf("repair-pr-%d", pr.Number),
+			Kind:      app.ActionRepairPR,
+			PR:        pr,
+			NewBase:   pr.BaseRefName,
+			Reason:    app.ReasonParentWillChange,
+			DependsOn: []string{action.ID},
+		}, true
+	}
+	return app.Action{}, false
 }
 
 func (m Model) renderHelp() string {
@@ -665,7 +756,7 @@ func reasonSuffix(
 		if reason := warningReasonText(warning, hasWarning, plain, withCursorBg); reason != "" {
 			parts = append(parts, reason)
 		}
-	case "DEPENDENT", "REPAIR", "UPDATE":
+	case "REPAIR", "UPDATE":
 		if reason := rowReasonText(status, originalBase); reason != "" {
 			parts = append(parts, plain(reason))
 		}
@@ -748,6 +839,36 @@ func actionsByPR(actions []app.Action) map[int]app.Action {
 		out[action.PR.Number] = action
 	}
 	return out
+}
+
+func parentsByPR(roots []*stackedpr.Node) map[int]int {
+	out := map[int]int{}
+	var walk func(*stackedpr.Node, int)
+	walk = func(node *stackedpr.Node, parent int) {
+		if node == nil {
+			return
+		}
+		if parent != 0 {
+			out[node.Value.Number] = parent
+		}
+		for _, child := range node.Children {
+			walk(child, node.Value.Number)
+		}
+	}
+	for _, root := range roots {
+		walk(root, 0)
+	}
+	return out
+}
+
+func collectSubtreeNumbers(node *stackedpr.Node, out *[]int) {
+	if node == nil {
+		return
+	}
+	*out = append(*out, node.Value.Number)
+	for _, child := range node.Children {
+		collectSubtreeNumbers(child, out)
+	}
 }
 
 func warningForPR(plan *app.Plan, prNumber int) (app.SelectionWarning, bool) {
