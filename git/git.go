@@ -60,9 +60,38 @@ func GetDefaultBranch(ctx context.Context, mods ...CommandModifier) (string, err
 		return defaultBranchCache, nil
 	}
 
+	branch, err := getDefaultBranchFromRemoteHead(ctx, "origin", mods...)
+	if err == nil {
+		defaultBranchCache = branch
+		return defaultBranchCache, nil
+	}
+
+	branch, err = getDefaultBranchFromRemoteShow(ctx, "origin", mods...)
+	if err != nil {
+		return "", err
+	}
+	defaultBranchCache = branch
+	return defaultBranchCache, nil
+}
+
+func getDefaultBranchFromRemoteHead(ctx context.Context, remote string, mods ...CommandModifier) (string, error) {
 	stdout := &bytes.Buffer{}
-	args := []string{"remote", "show", "origin"}
-	mods = append(mods, WithStdout(stdout))
+	args := []string{"symbolic-ref", "--quiet", "--short", "refs/remotes/" + remote + "/HEAD"}
+	mods = append(append([]CommandModifier{}, mods...), WithStdout(stdout))
+	if err := NewCommand("git", args...).Run(ctx, mods...); err != nil {
+		return "", err
+	}
+
+	if branch, ok := defaultBranchFromSymbolicRef(remote, stdout.String()); ok {
+		return branch, nil
+	}
+	return "", fmt.Errorf("could not determine default branch from refs/remotes/%s/HEAD", remote)
+}
+
+func getDefaultBranchFromRemoteShow(ctx context.Context, remote string, mods ...CommandModifier) (string, error) {
+	stdout := &bytes.Buffer{}
+	args := []string{"remote", "show", remote}
+	mods = append(append([]CommandModifier{}, mods...), WithStdout(stdout))
 	if err := NewCommand("git", args...).Run(ctx, mods...); err != nil {
 		return "", err
 	}
@@ -71,13 +100,21 @@ func GetDefaultBranch(ctx context.Context, mods ...CommandModifier) (string, err
 		if strings.Contains(line, "HEAD branch") {
 			parts := strings.Split(line, ":")
 			if len(parts) > 1 {
-				defaultBranchCache = strings.TrimSpace(parts[1])
-				return defaultBranchCache, nil
+				branch := strings.TrimSpace(parts[1])
+				if branch != "" {
+					return branch, nil
+				}
 			}
 		}
 	}
 
 	return "", fmt.Errorf("could not determine default branch")
+}
+
+func defaultBranchFromSymbolicRef(remote, ref string) (string, bool) {
+	ref = strings.TrimSpace(ref)
+	branch, ok := strings.CutPrefix(ref, remote+"/")
+	return branch, ok && branch != ""
 }
 
 func GetBranchCommits(ctx context.Context, base, head string) ([]string, error) {

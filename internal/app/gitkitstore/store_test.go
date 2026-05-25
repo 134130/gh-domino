@@ -97,3 +97,25 @@ func TestGitOperationsUseGitClient(t *testing.T) {
 		t.Fatalf("merge base mismatch: %q", base)
 	}
 }
+
+func TestDefaultBranchCachesByRemote(t *testing.T) {
+	command := "git symbolic-ref --quiet --short refs/remotes/origin/HEAD"
+	runner := &fakeRunner{results: map[string]gitcmd.Result{
+		command: {Stdout: []byte("origin/main\n")},
+	}}
+
+	store := New(runner)
+	for range 2 {
+		branch, err := store.DefaultBranch(context.Background(), "origin")
+		if err != nil {
+			t.Fatalf("DefaultBranch returned error: %v", err)
+		}
+		if branch != "main" {
+			t.Fatalf("branch mismatch: want %q, got %q", "main", branch)
+		}
+	}
+
+	if len(runner.commands) != 1 || runner.commands[0].String() != command {
+		t.Fatalf("expected cached default branch lookup, got %#v", runner.commands)
+	}
+}

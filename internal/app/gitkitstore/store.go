@@ -20,16 +20,18 @@ import (
 const pullRequestFields = "number,title,url,author,state,isDraft,mergeCommit,baseRefName,headRefName,headRepository,commits"
 
 type Store struct {
-	git gitrepo.Client
-	gh  ghcli.Client
+	git                gitrepo.Client
+	gh                 ghcli.Client
+	defaultBranchCache map[string]string
 }
 
 type Option func(*Store)
 
 func New(r gitcmd.Runner, opts ...Option) Store {
 	store := Store{
-		git: gitrepo.New(r),
-		gh:  ghcli.New(r),
+		git:                gitrepo.New(r),
+		gh:                 ghcli.New(r),
+		defaultBranchCache: map[string]string{},
 	}
 	for _, opt := range opts {
 		opt(&store)
@@ -81,10 +83,21 @@ func (s Store) RefSHA(ctx context.Context, ref string) (string, error) {
 }
 
 func (s Store) DefaultBranch(ctx context.Context, remote string) (string, error) {
-	if strings.TrimSpace(remote) == "" {
+	remote = strings.TrimSpace(remote)
+	if remote == "" {
 		remote = "origin"
 	}
-	return s.git.DefaultBranch(ctx, remote)
+	if branch := s.defaultBranchCache[remote]; branch != "" {
+		return branch, nil
+	}
+	branch, err := s.git.DefaultBranch(ctx, remote)
+	if err != nil {
+		return "", err
+	}
+	if s.defaultBranchCache != nil {
+		s.defaultBranchCache[remote] = branch
+	}
+	return branch, nil
 }
 
 func (s Store) MergeBase(ctx context.Context, a, b string) (string, error) {
