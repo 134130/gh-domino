@@ -45,6 +45,7 @@ type Context struct {
 	styles     styles
 	statusByPR map[int]app.PullStatus
 	actionByPR map[int]app.Action
+	actionByID map[string]app.Action
 }
 
 func NewContext(plan, preview *app.Plan, mode RowMode, opts Options) Context {
@@ -54,6 +55,10 @@ func NewContext(plan, preview *app.Plan, mode RowMode, opts Options) Context {
 	if preview == nil {
 		preview = &app.Plan{}
 	}
+	actionByID := ActionsByID(plan.Actions)
+	for _, action := range preview.Actions {
+		actionByID[action.ID] = action
+	}
 	return Context{
 		preview:    preview,
 		mode:       mode,
@@ -61,6 +66,7 @@ func NewContext(plan, preview *app.Plan, mode RowMode, opts Options) Context {
 		styles:     newStyles(opts),
 		statusByPR: StatusesByPR(plan.Pulls),
 		actionByPR: ActionsByPR(plan.Actions),
+		actionByID: actionByID,
 	}
 }
 
@@ -104,7 +110,7 @@ func RenderPlanSnapshot(plan, preview *app.Plan, opts Options) string {
 			lines = append(lines, ctx.RenderRow(fn, RowState{}))
 		}
 	}
-	lines = append(lines, "", ctx.RenderPreview())
+	lines = append(lines, "", ctx.RenderActions())
 	return strings.Join(lines, "\n") + "\n"
 }
 
@@ -129,7 +135,7 @@ func (c Context) RenderRow(fn FlatNode, state RowState) string {
 	currentAction, hasCurrentAction := c.actionByPR[pr.Number]
 	previewAction, hasPreviewAction := previewActionForPR(c.preview, pr.Number)
 	displayAction, hasDisplayAction := c.displayActionForRow(pr, currentAction, hasCurrentAction, previewAction, hasPreviewAction)
-	symbol, label, style := c.rowStatus(status, hasWarning, displayAction, hasDisplayAction)
+	symbol, _, style := c.rowStatus(status, hasWarning, displayAction, hasDisplayAction)
 	cursorActive := state.Cursor
 	bg := cursorBg(c.opts.IsDark)
 
@@ -173,10 +179,7 @@ func (c Context) RenderRow(fn FlatNode, state RowState) string {
 	row.WriteString(plain(" ← "))
 	row.WriteString(withCursorBg(c.styles.headBranch).Render(pr.HeadRefName))
 	row.WriteString(plain(")"))
-	row.WriteString(c.reasonSuffix(label, status, displayAction, hasDisplayAction, warning, hasWarning, plain, withCursorBg))
-	if c.mode == RowModePlan && hasDisplayAction && !hasCurrentAction && displayAction.Reason == app.ReasonParentWillChange {
-		row.WriteString(plain(" · after parent repair"))
-	}
+	row.WriteString(c.reasonSuffix(status, displayAction, hasDisplayAction, warning, hasWarning, plain, withCursorBg))
 	line := row.String()
 
 	width := c.opts.width()
@@ -195,6 +198,10 @@ func (c Context) RenderRow(fn FlatNode, state RowState) string {
 
 func (c Context) RenderPreview() string {
 	return RenderPreview(c.preview, c.opts)
+}
+
+func (c Context) RenderActions() string {
+	return RenderActions(c.preview, c.opts)
 }
 
 func RenderPreview(plan *app.Plan, opts Options) string {
@@ -226,6 +233,28 @@ func RenderPreview(plan *app.Plan, opts Options) string {
 			break
 		}
 		lines = append(lines, "  "+styles.warning.Render(WarningSummary(warning)))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func RenderActions(plan *app.Plan, opts Options) string {
+	styles := newStyles(opts)
+	if plan == nil {
+		plan = &app.Plan{}
+	}
+
+	lines := []string{"Actions"}
+	if len(plan.Actions) == 0 {
+		lines = append(lines, "  No actions.")
+	}
+	for _, action := range plan.Actions {
+		lines = append(lines, "  "+ActionSummary(action, opts))
+	}
+	if len(plan.Warnings) > 0 {
+		lines = append(lines, "", "Warnings")
+		for _, warning := range plan.Warnings {
+			lines = append(lines, "  "+styles.warning.Render(WarningSummary(warning)))
+		}
 	}
 	return strings.Join(lines, "\n")
 }
@@ -289,6 +318,14 @@ func ActionsByPR(actions []app.Action) map[int]app.Action {
 	out := make(map[int]app.Action, len(actions))
 	for _, action := range actions {
 		out[action.PR.Number] = action
+	}
+	return out
+}
+
+func ActionsByID(actions []app.Action) map[string]app.Action {
+	out := make(map[string]app.Action, len(actions))
+	for _, action := range actions {
+		out[action.ID] = action
 	}
 	return out
 }
@@ -373,7 +410,6 @@ func (c Context) displayActionForRow(
 }
 
 func (c Context) reasonSuffix(
-	label string,
 	status app.PullStatus,
 	action app.Action,
 	hasAction bool,
@@ -383,31 +419,19 @@ func (c Context) reasonSuffix(
 	withCursorBg func(lipgloss.Style) lipgloss.Style,
 ) string {
 	parts := make([]string, 0, 3)
-	switch label {
-	case "WARN":
+	switch {
+	case hasWarning && c.mode == RowModePlan:
 		parts = append(parts, plain("warning"))
 		if reason := warningReasonText(warning, hasWarning, plain, withCursorBg, c.styles.warning); reason != "" {
 			parts = append(parts, reason)
 		}
-	case "REPAIR", "UPDATE":
-		if reason := c.actionReasonText(action, status, hasAction); reason != "" {
-			parts = append(parts, plain(label+" "+reason))
-		} else {
-			parts = append(parts, plain(label))
+	case c.mode == RowModePlan && hasAction:
+		for _, part := range c.planReasonParts(action, status) {
+			parts = append(parts, plain(part))
 		}
-	case "BROKEN", "UPDATEABLE":
-		if reason := c.statusReasonText(status); reason != "" {
-			parts = append(parts, plain(label+" "+reason))
-		} else {
-			parts = append(parts, plain(label))
-		}
-	}
-	if status.OriginalBase != nil {
-		prNumber := withCursorBg(c.styles.merged).Render(fmt.Sprintf("#%d", status.OriginalBase.Number))
-		if status.Reason == app.ReasonMergedBase || status.Reason == app.ReasonMergedAncestor {
-			parts = append(parts, fmt.Sprintf("%s%s", prNumber, plain(" was merged")))
-		} else {
-			parts = append(parts, fmt.Sprintf("%s%s", plain("was "), prNumber))
+	case c.mode == RowModeStatus:
+		for _, part := range c.statusReasonParts(status) {
+			parts = append(parts, plain(part))
 		}
 	}
 	if len(parts) == 0 {
@@ -421,40 +445,90 @@ func (c Context) reasonSuffix(
 	return out.String()
 }
 
-func (c Context) actionReasonText(action app.Action, status app.PullStatus, hasAction bool) string {
-	if !hasAction {
-		return ""
+func (c Context) planReasonParts(action app.Action, status app.PullStatus) []string {
+	switch action.Kind {
+	case app.ActionRepairPR:
+		target := action.NewBase
+		if target == "" {
+			target = status.NewBase
+		}
+		if target == "" {
+			target = action.PR.BaseRefName
+		}
+		parts := []string{"rebase onto " + target}
+		reason := action.Reason
+		if reason == "" {
+			reason = status.Reason
+		}
+		if detail := c.reasonDetail(reason, status.OriginalBase, action); detail != "" {
+			parts = append(parts, detail)
+		}
+		return parts
+	case app.ActionUpdateBranch:
+		parts := []string{"update branch"}
+		reason := action.Reason
+		if reason == "" {
+			reason = status.Reason
+		}
+		if detail := c.reasonDetail(reason, status.OriginalBase, action); detail != "" {
+			parts = append(parts, detail)
+		}
+		return parts
+	default:
+		return []string{string(action.Kind)}
 	}
-	if action.Reason == app.ReasonParentWillChange {
-		return ""
-	}
-	reason := action.Reason
-	if reason == "" {
-		reason = status.Reason
-	}
-	if reason == "" {
-		return ""
-	}
-	text := string(reason)
-	target := action.NewBase
-	if target == "" {
-		target = status.NewBase
-	}
-	if target != "" {
-		text += " → " + target
-	}
-	return text
 }
 
-func (c Context) statusReasonText(status app.PullStatus) string {
-	if status.Reason == "" {
+func (c Context) statusReasonParts(status app.PullStatus) []string {
+	switch status.State {
+	case app.PullStateBroken:
+		parts := []string{"needs rebase"}
+		if status.NewBase != "" {
+			parts[0] += " onto " + status.NewBase
+		}
+		if detail := c.reasonDetail(status.Reason, status.OriginalBase, app.Action{}); detail != "" {
+			parts = append(parts, detail)
+		}
+		return parts
+	case app.PullStateUpdateable:
+		parts := []string{"can update branch"}
+		if detail := c.reasonDetail(status.Reason, status.OriginalBase, app.Action{}); detail != "" {
+			parts = append(parts, detail)
+		}
+		return parts
+	default:
+		return nil
+	}
+}
+
+func (c Context) reasonDetail(reason app.Reason, originalBase *gitobj.PullRequest, action app.Action) string {
+	switch reason {
+	case app.ReasonMergedBase, app.ReasonMergedAncestor:
+		if originalBase != nil {
+			return fmt.Sprintf("base #%d was merged", originalBase.Number)
+		}
+		return "base was merged"
+	case app.ReasonParentDiverged:
+		return "parent changed"
+	case app.ReasonParentWillChange:
+		if dependencyPR := c.dependencyPR(action); dependencyPR != 0 {
+			return fmt.Sprintf("after #%d", dependencyPR)
+		}
+		return "after parent repair"
+	case app.ReasonRebaseAll:
+		return "clean update"
+	default:
 		return ""
 	}
-	text := string(status.Reason)
-	if status.NewBase != "" {
-		text += " → " + status.NewBase
+}
+
+func (c Context) dependencyPR(action app.Action) int {
+	for _, dependencyID := range action.DependsOn {
+		if dependency, ok := c.actionByID[dependencyID]; ok {
+			return dependency.PR.Number
+		}
 	}
-	return text
+	return 0
 }
 
 func warningReasonText(

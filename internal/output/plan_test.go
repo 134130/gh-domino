@@ -41,9 +41,9 @@ func TestRenderPlanHuman(t *testing.T) {
 	}
 
 	want := "Pull Requests\n" +
-		"  ✘ #52 bar (stack-1 ← stack-2) · REPAIR merged_base → main\n" +
+		"  ✘ #52 bar (stack-1 ← stack-2) · rebase onto main · base was merged\n" +
 		"\n" +
-		"Preview: 1 actions\n" +
+		"Actions\n" +
 		"  repair #52 stack-2 → main\n"
 	if got := out.String(); got != want {
 		t.Fatalf("output mismatch\nwant: %q\n got: %q", want, got)
@@ -107,11 +107,13 @@ func TestRenderPlanHumanWarnings(t *testing.T) {
 	}
 
 	want := "Pull Requests\n" +
-		"  ✘ #52 qux (main ← stack-1) · REPAIR merged_base → main\n" +
+		"  ✘ #52 qux (main ← stack-1) · rebase onto main · base was merged\n" +
 		"  ! └── #53 baz (stack-1 ← stack-2) · warning · depends on #52\n" +
 		"\n" +
-		"Preview: 1 actions · 1 warnings\n" +
+		"Actions\n" +
 		"  repair #53 stack-2 → stack-1\n" +
+		"\n" +
+		"Warnings\n" +
 		"  warning: #53 depends on unselected #52\n"
 	if got := out.String(); got != want {
 		t.Fatalf("output mismatch\nwant: %q\n got: %q", want, got)
@@ -144,6 +146,7 @@ func TestRenderPlanJSONWarnings(t *testing.T) {
 	got := out.String()
 	for _, want := range []string{
 		`"warnings":[`,
+		`"reason":"parent_diverged"`,
 		`"kind":"unselected_dependency"`,
 		`"dependencyId":"repair-pr-52"`,
 		`"dependencyPr":52`,
@@ -244,7 +247,7 @@ func TestRenderListFiltersBrokenWithTreeContext(t *testing.T) {
 
 	want := "Pull Requests\n" +
 		"  ✔︎ #52 bar (main ← stack-1)\n" +
-		"  ✘ └── #53 baz (stack-1 ← stack-2) · BROKEN parent_diverged → stack-1\n"
+		"  ✘ └── #53 baz (stack-1 ← stack-2) · needs rebase onto stack-1 · parent changed\n"
 	if got := out.String(); got != want {
 		t.Fatalf("output mismatch\nwant: %q\n got: %q", want, got)
 	}

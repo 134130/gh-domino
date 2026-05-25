@@ -109,7 +109,7 @@ func TestModelCleanNodeSelectionCreatesNoActionOrWarning(t *testing.T) {
 	if strings.Contains(row, "depends on") {
 		t.Fatalf("did not expect warning row dependency reason, got %q", row)
 	}
-	if strings.Contains(row, "after parent repair") {
+	if strings.Contains(row, "after #52") || strings.Contains(row, "after parent repair") {
 		t.Fatalf("did not expect follow-up reason for clean-only selection, got %q", row)
 	}
 }
@@ -125,7 +125,7 @@ func TestModelSelectedParentProjectsChildFollowUpRow(t *testing.T) {
 	if !strings.Contains(row, "✘") {
 		t.Fatalf("expected projected follow-up repair to render as cross, got %q", row)
 	}
-	if !strings.Contains(row, "after parent repair") {
+	if !strings.Contains(row, "after #52") {
 		t.Fatalf("expected projected follow-up reason, got %q", row)
 	}
 }
@@ -142,7 +142,7 @@ func TestModelSelectedSubtreeShowsFollowUpAsRepairCandidate(t *testing.T) {
 	if !strings.Contains(row, "✘") {
 		t.Fatalf("expected follow-up repair to render as cross, got %q", row)
 	}
-	if !strings.Contains(row, "after parent repair") {
+	if !strings.Contains(row, "after #52") {
 		t.Fatalf("expected follow-up reason, got %q", row)
 	}
 }

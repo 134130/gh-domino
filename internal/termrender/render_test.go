@@ -29,7 +29,7 @@ func TestRenderListStatusRows(t *testing.T) {
 	got := RenderList(plan, "all", false, Options{NoColor: true})
 	want := "Pull Requests\n" +
 		"  ✔︎ #52 bar (main ← stack-1)\n" +
-		"  ✘ └── #53 baz (stack-1 ← stack-2) · BROKEN parent_diverged → stack-1\n"
+		"  ✘ └── #53 baz (stack-1 ← stack-2) · needs rebase onto stack-1 · parent changed\n"
 	if got != want {
 		t.Fatalf("output mismatch\nwant: %q\n got: %q", want, got)
 	}
@@ -58,12 +58,46 @@ func TestRenderPlanSnapshotShowsTreeAndPreview(t *testing.T) {
 
 	got := RenderPlanSnapshot(plan, preview, Options{NoColor: true})
 	want := "Pull Requests\n" +
-		"  ✘ #52 bar (stack-1 ← stack-2) · REPAIR merged_base → main\n" +
+		"  ✘ #52 bar (stack-1 ← stack-2) · rebase onto main · base was merged\n" +
 		"\n" +
-		"Preview: 1 actions\n" +
+		"Actions\n" +
 		"  repair #52 stack-2 → main\n"
 	if got != want {
 		t.Fatalf("output mismatch\nwant: %q\n got: %q", want, got)
+	}
+}
+
+func TestRenderPlanSnapshotUsesHumanMergedBaseReason(t *testing.T) {
+	merged := testPR(51, "foo", "main", "stack-1")
+	root := &stackedpr.Node{
+		Value:        testPR(52, "bar", "stack-1", "stack-2"),
+		OriginalBase: &merged,
+	}
+	action := app.Action{
+		ID:      "repair-pr-52",
+		Kind:    app.ActionRepairPR,
+		PR:      root.Value,
+		NewBase: "main",
+		Reason:  app.ReasonMergedBase,
+	}
+	plan := &app.Plan{
+		Roots: []*stackedpr.Node{root},
+		Pulls: []app.PullStatus{{
+			PR:           root.Value,
+			OriginalBase: &merged,
+			State:        app.PullStateBroken,
+			Reason:       app.ReasonMergedBase,
+			NewBase:      "main",
+		}},
+		Actions: []app.Action{action},
+	}
+
+	got := RenderPlanSnapshot(plan, plan, Options{NoColor: true})
+	if !strings.Contains(got, "base #51 was merged") {
+		t.Fatalf("expected human merged-base reason, got %q", got)
+	}
+	if strings.Contains(got, "merged_base") {
+		t.Fatalf("did not expect internal reason code, got %q", got)
 	}
 }
 
@@ -81,6 +115,25 @@ func TestRenderPlanSnapshotDoesNotTruncateWhenWidthUnset(t *testing.T) {
 	got := RenderPlanSnapshot(plan, &app.Plan{}, Options{NoColor: true})
 	if !strings.Contains(got, head+")") {
 		t.Fatalf("expected full branch name to render without truncation, got %q", got)
+	}
+}
+
+func TestRenderPlanSnapshotShowsAllActions(t *testing.T) {
+	plan := &app.Plan{
+		Actions: []app.Action{
+			{ID: "a1", Kind: app.ActionRepairPR, PR: testPR(1, "one", "main", "one"), NewBase: "main"},
+			{ID: "a2", Kind: app.ActionRepairPR, PR: testPR(2, "two", "main", "two"), NewBase: "main"},
+			{ID: "a3", Kind: app.ActionRepairPR, PR: testPR(3, "three", "main", "three"), NewBase: "main"},
+			{ID: "a4", Kind: app.ActionRepairPR, PR: testPR(4, "four", "main", "four"), NewBase: "main"},
+		},
+	}
+
+	got := RenderPlanSnapshot(plan, plan, Options{NoColor: true})
+	if strings.Contains(got, "more actions") {
+		t.Fatalf("did not expect action truncation, got %q", got)
+	}
+	if !strings.Contains(got, "repair #4 four → main") {
+		t.Fatalf("expected final action to render, got %q", got)
 	}
 }
 
@@ -112,7 +165,7 @@ func TestRenderRowProjectsFollowUpRepair(t *testing.T) {
 	ctx := NewContext(plan, preview, RowModePlan, Options{NoColor: true})
 
 	got := ctx.RenderRow(FlattenTree(plan.Roots)[1], RowState{})
-	if !strings.Contains(got, "✘") || !strings.Contains(got, "after parent repair") {
+	if !strings.Contains(got, "✘") || !strings.Contains(got, "after #52") {
 		t.Fatalf("expected projected repair row, got %q", got)
 	}
 }
