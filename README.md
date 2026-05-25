@@ -14,23 +14,16 @@ the rest of the PRs in the chain for you.
 
 The tool works with all of GitHub's merge strategies (Merge Commit, Squash and Merge, and Rebase and Merge) automatically.
 
-## What's different from other tools?
+## Features
 
-There are several tools that help manage stacked PRs, but `gh-domino` has some unique features:
+Since v3.0.0, `gh-domino` includes several utilities to make stack management safer and more predictable:
 
-- **Zero Configuration**: No setup or configuration is needed. Just install the extension and run it in your repository.
-- **No State Management**: It doesn't require any special branch naming conventions or local state files. It works with your existing branches and PRs.
-- **No Additional Descriptions on PRs**: It doesn't require you to add special tags or descriptions to your PRs.
+*   **Interactive TUI (`gh domino`)**: Visually inspect your stacked PRs and identify broken dependencies at a glance. **(Currently, executing rebases is only supported via the TUI).**
+*   **Dry-run Planning (`gh domino plan`)**: Safely preview the exact rebase and branch update operations before making any changes.
+*   **Concurrent Operations (`--parallel`)**: Process independent PR stacks in parallel for faster updates.
+*   **Flexible Filtering**: Use flags like `--author` and `--merged-limit` to narrow down the target PRs.
 
-## Design Principles
-
-`gh-domino` treats a stack as a branch graph. GitHub pull request metadata is used to discover each PR's base and head branch, but the repair itself follows normal Git branch semantics.
-
-- A PR's parent is its direct base branch. The tool does not infer hidden ancestors beyond that branch relationship.
-- Selecting a PR does not implicitly select its parent PRs. Exact PR, subtree, and chain selection are explicit scopes.
-- Remote branch refs are the source of truth for planning. Local branches do not need to exist for the stack to be discovered.
-
-See [Scenario-Based Test Plan](./docs/scenario-tests.md) for the behavior matrix covered by the local `test/harness` scenario tests.
+> **Note:** The standalone `merge` command is currently under development. To perform actual rebase and update actions, please use the interactive TUI (`gh domino`).
 
 ## Installation
 
@@ -43,13 +36,39 @@ gh extension install 134130/gh-domino
 Navigate to your repository and run:
 
 ```bash
-gh domino [--auto] [--dry-run]
+gh domino
 ```
 
-### Options
+## Comparison with other tools
 
-- `--auto`: Automatically rebase the PRs without prompting for confirmation.
-- `--dry-run`: Show what would happen without making any changes.
+There are several excellent tools for managing stacked PRs. `gh-domino` takes a minimalist approach, focusing solely on the rebasing step rather than managing the entire PR lifecycle.
+
+| Feature | `gh-domino` | Graphite (`gt`) | `github/gh-stack` |
+| :--- | :--- | :--- | :--- |
+| **Primary Focus** | **Repairing** broken stacks (Cascading rebases) | **End-to-end** lifecycle management | **End-to-end** lifecycle management |
+| **State Management** | **Stateless** (Relies on GitHub PR metadata & Git refs) | Stateful (Local & remote sync) | Stateful (Local branch tracking) |
+| **Workflow Impact** | Use standard Git/GitHub commands; run only when a stack breaks | Requires adopting a custom CLI and web dashboard | Requires using custom CLI for creating/submitting PRs |
+| **PR Descriptions** | Unmodified | Adds tracking metadata | Adds tracking metadata |
+
+*(Note: Native platform features like **GitLab Stacked MRs** provide similar end-to-end management but are strictly tied to their respective ecosystems. `gh-domino` is built specifically for GitHub's API semantics.)*
+
+## How it works
+
+`gh-domino` operates by performing the following steps:
+
+1. **Fetch PRs:** It fetches all open and recently merged pull requests from the `origin` remote.
+2. **Build Dependency Tree:** It analyzes the base and head branches of your open pull requests to construct a dependency tree.
+   This tree represents the "stacks" where one PR is based on another.
+3. **Identify Broken PRs:** The tool traverses the dependency tree to find "broken" PRs. A PR is considered broken if:
+   - Its base branch belongs to a pull request that has already been merged.
+   - Its base branch (i.e., the parent PR in the stack) has been updated or rebased, causing the child PR to diverge.
+4. **Rebase and Update:** For each broken PR, `gh-domino` will:
+   - Determine the correct new base branch (for example, the base of the PR that was just merged).
+   - Perform a `git rebase` of the PR's branch onto the new base.
+   - Perform a `git push --force-with-lease` to update the PR branch on GitHub.
+   - Finally, if necessary, it will update the base branch of the pull request on GitHub using `gh pr edit`.
+
+This process continues down the stack, ensuring that each dependent PR is correctly rebased onto its new parent, just like falling dominoes.
 
 ### Example
 
@@ -69,23 +88,12 @@ Finally, the PRs are rebased and ready to be merged:
 
 ![rebased](./assets/rebased.png)
 
-## How it works
+## Design Principles
 
-`gh-domino` operates by performing the following steps:
-
-1. **Fetch PRs:** It fetches all open and recently merged pull requests from the `origin` remote.
-2. **Build Dependency Tree:** It analyzes the base and head branches of your open pull requests to construct a dependency tree. 
-   This tree represents the "stacks" where one PR is based on another.
-3. **Identify Broken PRs:** The tool traverses the dependency tree to find "broken" PRs. A PR is considered broken if:
-   - Its base branch belongs to a pull request that has already been merged.
-   - Its base branch (i.e., the parent PR in the stack) has been updated or rebased, causing the child PR to diverge.
-4. **Rebase and Update:** For each broken PR, `gh-domino` will:
-   - Determine the correct new base branch (for example, the base of the PR that was just merged).
-   - Perform a `git rebase` of the PR's branch onto the new base.
-   - Perform a `git push --force-with-lease` to update the PR branch on GitHub.
-   - Finally, if necessary, it will update the base branch of the pull request on GitHub using `gh pr edit`.
-
-This process continues down the stack, ensuring that each dependent PR is correctly rebased onto its new parent, just like falling dominoes.
+`gh-domino` is built on a few core principles to ensure reliability:
+1. **No Local State:** It does not use local tracking files. Remote Git branches and GitHub PR metadata are the absolute source of truth.
+2. **Clean PR Bodies:** It does not append tracking IDs or metadata tags to your pull request descriptions.
+3. **Explicit Execution:** It does not hijack Git hooks. It only reads and modifies branches when you explicitly execute the command.
 
 ## Related
 
