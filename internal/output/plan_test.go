@@ -247,7 +247,7 @@ func TestRenderListFiltersBrokenWithTreeContext(t *testing.T) {
 
 	want := "Pull Requests\n" +
 		"  ✔︎ #52 bar (main ← stack-1)\n" +
-		"  ✘ └── #53 baz (stack-1 ← stack-2) · needs rebase onto stack-1 · parent changed\n"
+		"  ✘ └── #53 baz (stack-1 ← stack-2) · needs rebase onto #52 · parent changed\n"
 	if got := out.String(); got != want {
 		t.Fatalf("output mismatch\nwant: %q\n got: %q", want, got)
 	}

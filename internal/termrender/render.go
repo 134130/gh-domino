@@ -46,6 +46,7 @@ type Context struct {
 	statusByPR map[int]app.PullStatus
 	actionByPR map[int]app.Action
 	actionByID map[string]app.Action
+	prByHead   map[string]gitobj.PullRequest
 }
 
 func NewContext(plan, preview *app.Plan, mode RowMode, opts Options) Context {
@@ -59,6 +60,7 @@ func NewContext(plan, preview *app.Plan, mode RowMode, opts Options) Context {
 	for _, action := range preview.Actions {
 		actionByID[action.ID] = action
 	}
+	prByHead := PRsByHead(plan, preview)
 	return Context{
 		preview:    preview,
 		mode:       mode,
@@ -67,6 +69,7 @@ func NewContext(plan, preview *app.Plan, mode RowMode, opts Options) Context {
 		statusByPR: StatusesByPR(plan.Pulls),
 		actionByPR: ActionsByPR(plan.Actions),
 		actionByID: actionByID,
+		prByHead:   prByHead,
 	}
 }
 
@@ -330,6 +333,47 @@ func ActionsByID(actions []app.Action) map[string]app.Action {
 	return out
 }
 
+func PRsByHead(plans ...*app.Plan) map[string]gitobj.PullRequest {
+	out := map[string]gitobj.PullRequest{}
+	for _, plan := range plans {
+		if plan == nil {
+			continue
+		}
+		var walk func(*stackedpr.Node)
+		walk = func(node *stackedpr.Node) {
+			if node == nil {
+				return
+			}
+			if node.Value.HeadRefName != "" {
+				out[node.Value.HeadRefName] = node.Value
+			}
+			if node.OriginalBase != nil && node.OriginalBase.HeadRefName != "" {
+				out[node.OriginalBase.HeadRefName] = *node.OriginalBase
+			}
+			for _, child := range node.Children {
+				walk(child)
+			}
+		}
+		for _, root := range plan.Roots {
+			walk(root)
+		}
+		for _, status := range plan.Pulls {
+			if status.PR.HeadRefName != "" {
+				out[status.PR.HeadRefName] = status.PR
+			}
+			if status.OriginalBase != nil && status.OriginalBase.HeadRefName != "" {
+				out[status.OriginalBase.HeadRefName] = *status.OriginalBase
+			}
+		}
+		for _, action := range plan.Actions {
+			if action.PR.HeadRefName != "" {
+				out[action.PR.HeadRefName] = action.PR
+			}
+		}
+	}
+	return out
+}
+
 func ParentsByPR(roots []*stackedpr.Node) map[int]int {
 	out := map[int]int{}
 	var walk func(*stackedpr.Node, int)
@@ -426,13 +470,9 @@ func (c Context) reasonSuffix(
 			parts = append(parts, reason)
 		}
 	case c.mode == RowModePlan && hasAction:
-		for _, part := range c.planReasonParts(action, status) {
-			parts = append(parts, plain(part))
-		}
+		parts = append(parts, c.planReasonParts(action, status, plain, withCursorBg)...)
 	case c.mode == RowModeStatus:
-		for _, part := range c.statusReasonParts(status) {
-			parts = append(parts, plain(part))
-		}
+		parts = append(parts, c.statusReasonParts(status, plain, withCursorBg)...)
 	}
 	if len(parts) == 0 {
 		return ""
@@ -445,7 +485,12 @@ func (c Context) reasonSuffix(
 	return out.String()
 }
 
-func (c Context) planReasonParts(action app.Action, status app.PullStatus) []string {
+func (c Context) planReasonParts(
+	action app.Action,
+	status app.PullStatus,
+	plain func(string) string,
+	withCursorBg func(lipgloss.Style) lipgloss.Style,
+) []string {
 	switch action.Kind {
 	case app.ActionRepairPR:
 		target := action.NewBase
@@ -455,44 +500,54 @@ func (c Context) planReasonParts(action app.Action, status app.PullStatus) []str
 		if target == "" {
 			target = action.PR.BaseRefName
 		}
-		parts := []string{"rebase onto " + target}
+		parts := []string{c.renderTarget("rebase onto ", target, plain, withCursorBg)}
 		reason := action.Reason
 		if reason == "" {
 			reason = status.Reason
 		}
-		if detail := c.reasonDetail(reason, status.OriginalBase, action); detail != "" {
+		if detail := c.reasonDetail(reason, status.OriginalBase, action, plain, withCursorBg); detail != "" {
 			parts = append(parts, detail)
 		}
 		return parts
 	case app.ActionUpdateBranch:
-		parts := []string{"update branch"}
+		parts := []string{plain("update branch")}
 		reason := action.Reason
 		if reason == "" {
 			reason = status.Reason
 		}
-		if detail := c.reasonDetail(reason, status.OriginalBase, action); detail != "" {
+		if detail := c.reasonDetail(reason, status.OriginalBase, action, plain, withCursorBg); detail != "" {
 			parts = append(parts, detail)
 		}
 		return parts
 	default:
-		return []string{string(action.Kind)}
+		return []string{plain(string(action.Kind))}
 	}
 }
 
-func (c Context) statusReasonParts(status app.PullStatus) []string {
+func (c Context) statusReasonParts(
+	status app.PullStatus,
+	plain func(string) string,
+	withCursorBg func(lipgloss.Style) lipgloss.Style,
+) []string {
 	switch status.State {
 	case app.PullStateBroken:
-		parts := []string{"needs rebase"}
+		label := "needs rebase"
 		if status.NewBase != "" {
-			parts[0] += " onto " + status.NewBase
+			label = "needs rebase onto "
 		}
-		if detail := c.reasonDetail(status.Reason, status.OriginalBase, app.Action{}); detail != "" {
+		var parts []string
+		if status.NewBase != "" {
+			parts = []string{c.renderTarget(label, status.NewBase, plain, withCursorBg)}
+		} else {
+			parts = []string{plain(label)}
+		}
+		if detail := c.reasonDetail(status.Reason, status.OriginalBase, app.Action{}, plain, withCursorBg); detail != "" {
 			parts = append(parts, detail)
 		}
 		return parts
 	case app.PullStateUpdateable:
-		parts := []string{"can update branch"}
-		if detail := c.reasonDetail(status.Reason, status.OriginalBase, app.Action{}); detail != "" {
+		parts := []string{plain("can update branch")}
+		if detail := c.reasonDetail(status.Reason, status.OriginalBase, app.Action{}, plain, withCursorBg); detail != "" {
 			parts = append(parts, detail)
 		}
 		return parts
@@ -501,34 +556,61 @@ func (c Context) statusReasonParts(status app.PullStatus) []string {
 	}
 }
 
-func (c Context) reasonDetail(reason app.Reason, originalBase *gitobj.PullRequest, action app.Action) string {
+func (c Context) reasonDetail(
+	reason app.Reason,
+	originalBase *gitobj.PullRequest,
+	action app.Action,
+	plain func(string) string,
+	withCursorBg func(lipgloss.Style) lipgloss.Style,
+) string {
 	switch reason {
 	case app.ReasonMergedBase, app.ReasonMergedAncestor:
 		if originalBase != nil {
-			return fmt.Sprintf("base #%d was merged", originalBase.Number)
+			return fmt.Sprintf(
+				"%s%s%s",
+				plain("base "),
+				withCursorBg(c.styles.prNumber(*originalBase)).Render(fmt.Sprintf("#%d", originalBase.Number)),
+				plain(" was merged"),
+			)
 		}
-		return "base was merged"
+		return plain("base was merged")
 	case app.ReasonParentDiverged:
-		return "parent changed"
+		return plain("parent changed")
 	case app.ReasonParentWillChange:
-		if dependencyPR := c.dependencyPR(action); dependencyPR != 0 {
-			return fmt.Sprintf("after #%d", dependencyPR)
+		if dependency, ok := c.dependencyAction(action); ok {
+			return fmt.Sprintf(
+				"%s%s",
+				plain("after "),
+				withCursorBg(c.styles.prNumber(dependency.PR)).Render(fmt.Sprintf("#%d", dependency.PR.Number)),
+			)
 		}
-		return "after parent repair"
+		return plain("after parent repair")
 	case app.ReasonRebaseAll:
-		return "clean update"
+		return plain("clean update")
 	default:
 		return ""
 	}
 }
 
-func (c Context) dependencyPR(action app.Action) int {
+func (c Context) renderTarget(
+	prefix string,
+	ref string,
+	plain func(string) string,
+	withCursorBg func(lipgloss.Style) lipgloss.Style,
+) string {
+	if pr, ok := c.prByHead[ref]; ok {
+		return plain(prefix) + withCursorBg(c.styles.prNumber(pr)).Render(fmt.Sprintf("#%d", pr.Number))
+	}
+	return plain(prefix + ref)
+}
+
+func (c Context) dependencyAction(action app.Action) (app.Action, bool) {
 	for _, dependencyID := range action.DependsOn {
 		if dependency, ok := c.actionByID[dependencyID]; ok {
-			return dependency.PR.Number
+			return dependency, true
 		}
 	}
-	return 0
+	return app.Action{}, false
 }
 
 func warningReasonText(

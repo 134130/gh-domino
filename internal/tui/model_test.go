@@ -115,7 +115,7 @@ func TestModelCleanNodeSelectionCreatesNoActionOrWarning(t *testing.T) {
 }
 
 func TestModelSelectedParentProjectsChildFollowUpRow(t *testing.T) {
-	m := NewModel(context.Background(), tuiTestPlan(false), Options{})
+	m := NewModel(context.Background(), tuiTestPlan(false), Options{NoColor: true})
 	m.width = 140
 
 	press(t, &m, " ")
@@ -131,7 +131,7 @@ func TestModelSelectedParentProjectsChildFollowUpRow(t *testing.T) {
 }
 
 func TestModelSelectedSubtreeShowsFollowUpAsRepairCandidate(t *testing.T) {
-	m := NewModel(context.Background(), tuiTestPlan(false), Options{})
+	m := NewModel(context.Background(), tuiTestPlan(false), Options{NoColor: true})
 	m.width = 140
 
 	press(t, &m, "m")
@@ -158,6 +158,22 @@ func TestModelHelpWrapsInsteadOfTruncating(t *testing.T) {
 	}
 	if strings.Contains(got, "…") {
 		t.Fatalf("expected help not to truncate, got %q", got)
+	}
+}
+
+func TestModelPreviewUsesAvailableVerticalSpace(t *testing.T) {
+	m := NewModel(context.Background(), tuiManyActionsPlan(), Options{NoColor: true})
+	m.width = 160
+	m.height = 30
+
+	press(t, &m, "a")
+
+	got := m.viewSelecting()
+	if strings.Contains(got, "more actions") {
+		t.Fatalf("did not expect preview truncation when space is available, got %q", got)
+	}
+	if !strings.Contains(got, "repair #55") {
+		t.Fatalf("expected final action to render, got %q", got)
 	}
 }
 
@@ -314,6 +330,41 @@ func tuiChainPlan() *app.Plan {
 			PR:        grandchild.Value,
 			NewBase:   "stack-2",
 			DependsOn: []string{"repair-pr-53"},
+		}},
+	}
+}
+
+func tuiManyActionsPlan() *app.Plan {
+	root := &stackedpr.Node{Value: tuiPR(52, "root", "main", "stack-1")}
+	child := &stackedpr.Node{Value: tuiPR(53, "child", "stack-1", "stack-2")}
+	grandchild := &stackedpr.Node{Value: tuiPR(54, "grandchild", "stack-2", "stack-3")}
+	greatGrandchild := &stackedpr.Node{Value: tuiPR(55, "great grandchild", "stack-3", "stack-4")}
+	root.Children = []*stackedpr.Node{child}
+	child.Children = []*stackedpr.Node{grandchild}
+	grandchild.Children = []*stackedpr.Node{greatGrandchild}
+
+	return &app.Plan{
+		Roots: []*stackedpr.Node{root},
+		Actions: []app.Action{{
+			ID:      "repair-pr-52",
+			Kind:    app.ActionRepairPR,
+			PR:      root.Value,
+			NewBase: "main",
+		}, {
+			ID:      "repair-pr-53",
+			Kind:    app.ActionRepairPR,
+			PR:      child.Value,
+			NewBase: "stack-1",
+		}, {
+			ID:      "repair-pr-54",
+			Kind:    app.ActionRepairPR,
+			PR:      grandchild.Value,
+			NewBase: "stack-2",
+		}, {
+			ID:      "repair-pr-55",
+			Kind:    app.ActionRepairPR,
+			PR:      greatGrandchild.Value,
+			NewBase: "stack-3",
 		}},
 	}
 }

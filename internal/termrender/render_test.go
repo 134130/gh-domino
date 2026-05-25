@@ -29,7 +29,7 @@ func TestRenderListStatusRows(t *testing.T) {
 	got := RenderList(plan, "all", false, Options{NoColor: true})
 	want := "Pull Requests\n" +
 		"  ✔︎ #52 bar (main ← stack-1)\n" +
-		"  ✘ └── #53 baz (stack-1 ← stack-2) · needs rebase onto stack-1 · parent changed\n"
+		"  ✘ └── #53 baz (stack-1 ← stack-2) · needs rebase onto #52 · parent changed\n"
 	if got != want {
 		t.Fatalf("output mismatch\nwant: %q\n got: %q", want, got)
 	}
@@ -64,6 +64,72 @@ func TestRenderPlanSnapshotShowsTreeAndPreview(t *testing.T) {
 		"  repair #52 stack-2 → main\n"
 	if got != want {
 		t.Fatalf("output mismatch\nwant: %q\n got: %q", want, got)
+	}
+}
+
+func TestRenderPlanSnapshotUsesTargetPRForRebaseTarget(t *testing.T) {
+	parent := &stackedpr.Node{Value: testPR(52, "foo", "main", "stack-1")}
+	child := &stackedpr.Node{Value: testPR(53, "bar", "stack-1", "stack-2")}
+	parent.Children = []*stackedpr.Node{child}
+	action := app.Action{
+		ID:      "repair-pr-53",
+		Kind:    app.ActionRepairPR,
+		PR:      child.Value,
+		NewBase: "stack-1",
+		Reason:  app.ReasonParentDiverged,
+	}
+	plan := &app.Plan{
+		Roots: []*stackedpr.Node{parent},
+		Pulls: []app.PullStatus{{
+			PR:    parent.Value,
+			State: app.PullStateClean,
+		}, {
+			PR:      child.Value,
+			State:   app.PullStateBroken,
+			Reason:  app.ReasonParentDiverged,
+			NewBase: "stack-1",
+		}},
+		Actions: []app.Action{action},
+	}
+
+	got := RenderPlanSnapshot(plan, plan, Options{NoColor: true})
+	if !strings.Contains(got, "rebase onto #52 · parent changed") {
+		t.Fatalf("expected PR target in rebase reason, got %q", got)
+	}
+}
+
+func TestRenderPlanSnapshotUsesTargetPRStateColor(t *testing.T) {
+	parent := &stackedpr.Node{Value: testPR(52, "foo", "main", "stack-1")}
+	child := &stackedpr.Node{Value: testPR(53, "bar", "stack-1", "stack-2")}
+	parent.Children = []*stackedpr.Node{child}
+	action := app.Action{
+		ID:      "repair-pr-53",
+		Kind:    app.ActionRepairPR,
+		PR:      child.Value,
+		NewBase: "stack-1",
+		Reason:  app.ReasonParentDiverged,
+	}
+	plan := &app.Plan{
+		Roots:   []*stackedpr.Node{parent},
+		Actions: []app.Action{action},
+	}
+
+	got := RenderPlanSnapshot(plan, plan, Options{})
+	if !strings.Contains(got, "\x1b[1;38;5;2m#52") {
+		t.Fatalf("expected open target PR to use open PR color, got %q", got)
+	}
+
+	parent.Value.State = gitobj.PullRequestStateClosed
+	got = RenderPlanSnapshot(plan, plan, Options{})
+	if !strings.Contains(got, "\x1b[1;38;5;1m#52") {
+		t.Fatalf("expected closed target PR to use closed PR color, got %q", got)
+	}
+
+	parent.Value.State = gitobj.PullRequestStateOpen
+	parent.Value.IsDraft = true
+	got = RenderPlanSnapshot(plan, plan, Options{})
+	if !strings.Contains(got, "\x1b[1;38;5;7m#52") {
+		t.Fatalf("expected draft target PR to use draft PR color, got %q", got)
 	}
 }
 
@@ -167,6 +233,9 @@ func TestRenderRowProjectsFollowUpRepair(t *testing.T) {
 	got := ctx.RenderRow(FlattenTree(plan.Roots)[1], RowState{})
 	if !strings.Contains(got, "✘") || !strings.Contains(got, "after #52") {
 		t.Fatalf("expected projected repair row, got %q", got)
+	}
+	if !strings.Contains(got, "rebase onto #52") {
+		t.Fatalf("expected PR target in projected repair row, got %q", got)
 	}
 }
 

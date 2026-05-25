@@ -425,8 +425,8 @@ func (m Model) loadPlanCmd(includeClean bool) tea.Cmd {
 
 func (m Model) viewSelecting() string {
 	header := m.renderHeader()
-	preview := m.renderPreview()
 	helpView := m.renderHelp()
+	preview := m.renderPreviewWithOptions(m.previewLimits(lineCount(helpView)))
 
 	if len(m.flat) == 0 {
 		return lipgloss.JoinVertical(lipgloss.Left,
@@ -551,18 +551,41 @@ func (m Model) renderHelp() string {
 	return strings.Join(lines, "\n")
 }
 
-func (m Model) renderPreview() string {
+func (m Model) renderPreviewWithOptions(opts termrender.Options) string {
 	if m.previewErr != nil {
 		if m.noColor {
 			return "Preview error: " + m.previewErr.Error()
 		}
 		return warningStyle.Render("Preview error: " + m.previewErr.Error())
 	}
-	return termrender.RenderPreview(m.preview, termrender.Options{
-		Width:   m.width,
-		NoColor: m.noColor,
-		IsDark:  m.isDark,
+	opts.Width = m.width
+	opts.NoColor = m.noColor
+	opts.IsDark = m.isDark
+	return termrender.RenderPreview(m.preview, opts)
+}
+
+func (m Model) previewLimits(helpLines int) termrender.Options {
+	if m.height == 0 || m.preview == nil {
+		return termrender.Options{}
+	}
+
+	actionCount := len(m.preview.Actions)
+	warningCount := len(m.preview.Warnings)
+	fullPreview := termrender.RenderPreview(m.preview, termrender.Options{
+		Width:              m.width,
+		NoColor:            m.noColor,
+		IsDark:             m.isDark,
+		MaxPreviewActions:  max(1, actionCount),
+		MaxPreviewWarnings: max(1, warningCount),
 	})
+	availablePreviewLines := m.height - 2 - len(m.flat) - helpLines
+	if availablePreviewLines >= lineCount(fullPreview) {
+		return termrender.Options{
+			MaxPreviewActions:  max(1, actionCount),
+			MaxPreviewWarnings: max(1, warningCount),
+		}
+	}
+	return termrender.Options{}
 }
 
 func collectSubtreeNumbers(node *stackedpr.Node, out *[]int) {
