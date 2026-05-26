@@ -75,6 +75,7 @@ func TestPlannerUsesUpstreamForSquashMergedBase(t *testing.T) {
 func TestPlannerIncludesCleanPRsWhenRequested(t *testing.T) {
 	ctx := context.Background()
 	store := newFakeStore()
+	store.refSHAs["origin/main"] = "sha-main"
 	store.mergeBases[pair("origin/main", "sha-feature")] = "sha-main"
 
 	plan, err := NewPlanner(store).Build(ctx, Snapshot{
@@ -133,9 +134,44 @@ func TestPlannerMarksMergedAncestorReason(t *testing.T) {
 	}
 }
 
+func TestPlannerDoesNotTreatDefaultBranchHeadPRAsStackParent(t *testing.T) {
+	ctx := context.Background()
+	store := newFakeStore()
+	store.refSHAs["origin/main"] = "sha-main"
+	store.refSHAs["origin/release"] = "sha-release"
+	store.mergeBases[pair("origin/main", "sha-feature")] = "sha-old-main"
+	store.mergeBases[pair("origin/release", "sha-main")] = "sha-release"
+
+	plan, err := NewPlanner(store).Build(ctx, Snapshot{
+		OpenPullRequests: []gitobj.PullRequest{
+			pr(10, "feature", "main", "feature"),
+			pr(20, "release merge", "release", "main"),
+		},
+		HeadSHAs: map[string]string{
+			"feature": "sha-feature",
+			"main":    "sha-main",
+		},
+	}, PlanOptions{})
+	if err != nil {
+		t.Fatalf("Build returned error: %v", err)
+	}
+
+	if len(plan.Actions) != 0 {
+		t.Fatalf("expected no repair actions, got %#v", plan.Actions)
+	}
+	status := statusForPR(t, plan, 10)
+	if got, want := status.State, PullStateUpdateable; got != want {
+		t.Fatalf("feature state mismatch: want %q, got %q", want, got)
+	}
+	if got, want := status.Reason, ReasonBaseStale; got != want {
+		t.Fatalf("feature reason mismatch: want %q, got %q", want, got)
+	}
+}
+
 func TestPlannerIgnoresMergedAncestorWhenDefaultBranchAlreadyInHead(t *testing.T) {
 	ctx := context.Background()
 	store := newFakeStore()
+	store.refSHAs["origin/main"] = "sha-main"
 	store.ancestors[pair("origin/main", "sha-feature")] = true
 	store.ancestors[pair("p1c1", "sha-feature")] = true
 	store.mergeBases[pair("origin/main", "sha-feature")] = "sha-main"
@@ -169,6 +205,7 @@ func TestPlannerIgnoresMergedAncestorWhenDefaultBranchAlreadyInHead(t *testing.T
 func TestPlannerIgnoresMergedPRCommitsMissingLocally(t *testing.T) {
 	ctx := context.Background()
 	store := newFakeStore()
+	store.refSHAs["origin/main"] = "sha-main"
 	store.mergeBases[pair("origin/main", "sha-feature")] = "sha-main"
 	store.ancestorErrors[pair("missing-commit", "sha-feature")] = fmt.Errorf("failed to run git: fatal: Not a valid commit name missing-commit")
 
@@ -235,6 +272,17 @@ func actionSummaries(actions []Action) []string {
 		))
 	}
 	return summaries
+}
+
+func statusForPR(t *testing.T, plan *Plan, number int) PullStatus {
+	t.Helper()
+	for _, status := range plan.Pulls {
+		if status.PR.Number == number {
+			return status
+		}
+	}
+	t.Fatalf("missing status for PR #%d", number)
+	return PullStatus{}
 }
 
 func pr(number int, title, base, head string) gitobj.PullRequest {

@@ -129,7 +129,16 @@ func (p Planner) Build(ctx context.Context, snapshot Snapshot, opts PlanOptions)
 		Phase:   "tree",
 		Message: "Building dependency tree",
 	})
-	roots, err := p.buildDependencyTree(ctx, snapshot.OpenPullRequests, snapshot.MergedPullRequests, headSHAs, opts)
+	defaultBranch, err := p.store.DefaultBranch(ctx, opts.Remote)
+	if err != nil {
+		EmitProgress(progress, ProgressEvent{
+			Kind:    ProgressFailure,
+			Phase:   "tree",
+			Message: "Build dependency tree failed",
+		})
+		return nil, fmt.Errorf("get default branch: %w", err)
+	}
+	roots, err := p.buildDependencyTree(ctx, snapshot.OpenPullRequests, snapshot.MergedPullRequests, headSHAs, defaultBranch, opts)
 	if err != nil {
 		EmitProgress(progress, ProgressEvent{
 			Kind:    ProgressFailure,
@@ -146,11 +155,17 @@ func (p Planner) Build(ctx context.Context, snapshot Snapshot, opts PlanOptions)
 
 	prByHead := make(map[string]gitobj.PullRequest, len(snapshot.OpenPullRequests))
 	for _, pr := range snapshot.OpenPullRequests {
+		if !isStackableHead(pr, defaultBranch) {
+			continue
+		}
 		prByHead[pr.HeadRefName] = pr
 	}
 
 	mergedByHead := make(map[string]gitobj.PullRequest, len(snapshot.MergedPullRequests))
 	for _, pr := range snapshot.MergedPullRequests {
+		if !isStackableHead(pr, defaultBranch) {
+			continue
+		}
 		mergedByHead[pr.HeadRefName] = pr
 	}
 
@@ -179,7 +194,7 @@ func (p Planner) Build(ctx context.Context, snapshot Snapshot, opts PlanOptions)
 		}
 		processed[pr.Number] = true
 
-		status, err := p.classify(ctx, pr, node.OriginalBase, prByHead, mergedByHead, headSHAs, snapshot.MergedPullRequests, opts)
+		status, err := p.classify(ctx, pr, node.OriginalBase, prByHead, mergedByHead, headSHAs, snapshot.MergedPullRequests, defaultBranch, opts)
 		if err != nil {
 			return err
 		}
@@ -204,11 +219,13 @@ func (p Planner) Build(ctx context.Context, snapshot Snapshot, opts PlanOptions)
 			}
 
 		case PullStateUpdateable:
-			action = &Action{
-				ID:     fmt.Sprintf("update-branch-%d", pr.Number),
-				Kind:   ActionUpdateBranch,
-				PR:     pr,
-				Reason: status.Reason,
+			if opts.IncludeClean {
+				action = &Action{
+					ID:     fmt.Sprintf("update-branch-%d", pr.Number),
+					Kind:   ActionUpdateBranch,
+					PR:     pr,
+					Reason: status.Reason,
+				}
 			}
 		}
 
@@ -255,6 +272,7 @@ func (p Planner) classify(
 	mergedByHead map[string]gitobj.PullRequest,
 	headSHAs map[string]string,
 	mergedPRs []gitobj.PullRequest,
+	defaultBranch string,
 	opts PlanOptions,
 ) (PullStatus, error) {
 	status := PullStatus{
@@ -263,7 +281,7 @@ func (p Planner) classify(
 		State:        PullStateClean,
 	}
 
-	isBroken, reason, newBase, upstream, err := p.determinePRState(
+	state, reason, newBase, upstream, err := p.determinePRState(
 		ctx,
 		pr,
 		originalBase,
@@ -271,13 +289,15 @@ func (p Planner) classify(
 		mergedByHead,
 		headSHAs,
 		mergedPRs,
+		defaultBranch,
 		opts,
 	)
 	if err != nil {
 		return status, err
 	}
 
-	if isBroken {
+	switch state {
+	case PullStateBroken:
 		if newBase == "" {
 			newBase = pr.BaseRefName
 		}
@@ -285,6 +305,14 @@ func (p Planner) classify(
 		status.Reason = reason
 		status.NewBase = newBase
 		status.Upstream = upstream
+		return status, nil
+
+	case PullStateUpdateable:
+		if reason == "" {
+			reason = ReasonBaseStale
+		}
+		status.State = PullStateUpdateable
+		status.Reason = reason
 		return status, nil
 	}
 
@@ -304,66 +332,98 @@ func (p Planner) determinePRState(
 	mergedByHead map[string]gitobj.PullRequest,
 	headSHAs map[string]string,
 	mergedPRs []gitobj.PullRequest,
+	defaultBranch string,
 	opts PlanOptions,
-) (isBroken bool, reason Reason, newBase string, upstream string, err error) {
+) (state PullState, reason Reason, newBase string, upstream string, err error) {
 	if originalBase != nil {
 		upstream, err := p.squashUpstream(ctx, *originalBase)
 		if err != nil {
-			return false, ReasonNone, "", "", err
+			return PullStateClean, ReasonNone, "", "", err
 		}
 		reason := ReasonMergedAncestor
 		if originalBase.HeadRefName == pr.BaseRefName {
 			reason = ReasonMergedBase
 		}
-		return true, reason, originalBase.BaseRefName, upstream, nil
+		return PullStateBroken, reason, originalBase.BaseRefName, upstream, nil
 	}
 
 	if _, isStackedPR := prByHead[pr.BaseRefName]; !isStackedPR {
 		if mergedBasePR, isMerged := mergedByHead[pr.BaseRefName]; isMerged {
 			upstream, err := p.squashUpstream(ctx, mergedBasePR)
 			if err != nil {
-				return false, ReasonNone, "", "", err
+				return PullStateClean, ReasonNone, "", "", err
 			}
-			return true, ReasonMergedBase, mergedBasePR.BaseRefName, upstream, nil
+			return PullStateBroken, ReasonMergedBase, mergedBasePR.BaseRefName, upstream, nil
 		}
 	}
 
 	if _, ok := prByHead[pr.BaseRefName]; ok {
 		baseShaOnOrigin, err := p.store.RefSHA(ctx, fmt.Sprintf("%s/%s", opts.Remote, pr.BaseRefName))
 		if err != nil {
-			return false, ReasonNone, "", "", fmt.Errorf("get SHA for base %s: %w", pr.BaseRefName, err)
+			return PullStateClean, ReasonNone, "", "", fmt.Errorf("get SHA for base %s: %w", pr.BaseRefName, err)
 		}
 		headSha := headSHAs[pr.HeadRefName]
 		mergeBase, err := p.store.MergeBase(ctx, fmt.Sprintf("%s/%s", opts.Remote, pr.BaseRefName), headSha)
 		if err != nil {
-			return false, ReasonNone, "", "", fmt.Errorf("get merge base for %s and %s: %w", pr.BaseRefName, pr.HeadRefName, err)
+			return PullStateClean, ReasonNone, "", "", fmt.Errorf("get merge base for %s and %s: %w", pr.BaseRefName, pr.HeadRefName, err)
 		}
 		if mergeBase != baseShaOnOrigin {
-			return true, ReasonParentDiverged, "", "", nil
+			return PullStateBroken, ReasonParentDiverged, "", "", nil
 		}
 	}
 
-	defaultBranch, err := p.store.DefaultBranch(ctx, opts.Remote)
-	if err != nil {
-		return false, ReasonNone, "", "", fmt.Errorf("get default branch: %w", err)
-	}
 	if pr.BaseRefName == defaultBranch {
 		headSha := headSHAs[pr.HeadRefName]
 		mergeBase, err := p.store.MergeBase(ctx, fmt.Sprintf("%s/%s", opts.Remote, defaultBranch), headSha)
 		if err != nil {
-			return false, ReasonNone, "", "", fmt.Errorf("get merge base for %s: %w", pr.HeadRefName, err)
+			return PullStateClean, ReasonNone, "", "", fmt.Errorf("get merge base for %s: %w", pr.HeadRefName, err)
 		}
 
 		for _, mergedPR := range mergedPRs {
+			if mergedPR.BaseRefName != pr.BaseRefName || !isStackableHead(mergedPR, defaultBranch) {
+				continue
+			}
 			for _, commit := range mergedPR.Commits {
 				if mergeBase == commit.Oid {
-					return true, ReasonMergedAncestor, mergedPR.BaseRefName, "", nil
+					return PullStateBroken, ReasonMergedAncestor, mergedPR.BaseRefName, "", nil
 				}
 			}
 		}
 	}
 
-	return false, ReasonNone, "", "", nil
+	if _, ok := prByHead[pr.BaseRefName]; !ok {
+		state, reason, err := p.determineBaseBranchFreshness(ctx, pr, headSHAs, opts)
+		if err != nil {
+			return PullStateClean, ReasonNone, "", "", err
+		}
+		if state != PullStateClean {
+			return state, reason, "", "", nil
+		}
+	}
+
+	return PullStateClean, ReasonNone, "", "", nil
+}
+
+func (p Planner) determineBaseBranchFreshness(
+	ctx context.Context,
+	pr gitobj.PullRequest,
+	headSHAs map[string]string,
+	opts PlanOptions,
+) (PullState, Reason, error) {
+	baseRef := fmt.Sprintf("%s/%s", opts.Remote, pr.BaseRefName)
+	baseSha, err := p.store.RefSHA(ctx, baseRef)
+	if err != nil {
+		return PullStateClean, ReasonNone, fmt.Errorf("get SHA for base %s: %w", pr.BaseRefName, err)
+	}
+	headSha := headSHAs[pr.HeadRefName]
+	mergeBase, err := p.store.MergeBase(ctx, baseRef, headSha)
+	if err != nil {
+		return PullStateClean, ReasonNone, fmt.Errorf("get merge base for %s: %w", pr.HeadRefName, err)
+	}
+	if mergeBase != baseSha {
+		return PullStateUpdateable, ReasonBaseStale, nil
+	}
+	return PullStateClean, ReasonNone, nil
 }
 
 func (p Planner) squashUpstream(ctx context.Context, pr gitobj.PullRequest) (string, error) {
@@ -389,24 +449,33 @@ func (p Planner) buildDependencyTree(
 	prs []gitobj.PullRequest,
 	mergedPRs []gitobj.PullRequest,
 	headSHAs map[string]string,
+	defaultBranch string,
 	opts PlanOptions,
 ) ([]*stackedpr.Node, error) {
 	prMap := make(map[string]*stackedpr.Node, len(prs))
+	stackParentMap := make(map[string]*stackedpr.Node, len(prs))
 	isChild := make(map[string]bool, len(prs))
 	mergedByHead := make(map[string]gitobj.PullRequest, len(mergedPRs))
 	for _, pr := range mergedPRs {
+		if !isStackableHead(pr, defaultBranch) {
+			continue
+		}
 		mergedByHead[pr.HeadRefName] = pr
 	}
 
 	for _, pr := range prs {
-		prMap[pr.HeadRefName] = &stackedpr.Node{Value: pr}
+		node := &stackedpr.Node{Value: pr}
+		prMap[pr.HeadRefName] = node
+		if isStackableHead(pr, defaultBranch) {
+			stackParentMap[pr.HeadRefName] = node
+		}
 	}
 
 	for _, pr := range prs {
 		if pr.BaseRefName == pr.HeadRefName {
 			continue
 		}
-		if parent, ok := prMap[pr.BaseRefName]; ok {
+		if parent, ok := stackParentMap[pr.BaseRefName]; ok {
 			node := prMap[pr.HeadRefName]
 			parent.Children = append(parent.Children, node)
 			isChild[pr.HeadRefName] = true
@@ -420,23 +489,14 @@ func (p Planner) buildDependencyTree(
 		}
 	}
 
-	defaultBranch := ""
 	for _, node := range prMap {
-		if _, ok := prMap[node.Value.BaseRefName]; ok {
+		if _, ok := stackParentMap[node.Value.BaseRefName]; ok {
 			continue
 		}
 
 		if mergedPR, ok := mergedByHead[node.Value.BaseRefName]; ok {
 			node.OriginalBase = &mergedPR
 			continue
-		}
-
-		if defaultBranch == "" {
-			var err error
-			defaultBranch, err = p.store.DefaultBranch(ctx, opts.Remote)
-			if err != nil {
-				return nil, fmt.Errorf("get default branch: %w", err)
-			}
 		}
 
 		if node.Value.BaseRefName != defaultBranch {
@@ -473,6 +533,10 @@ func (p Planner) buildDependencyTree(
 	}
 
 	return roots, nil
+}
+
+func isStackableHead(pr gitobj.PullRequest, defaultBranch string) bool {
+	return pr.HeadRefName != "" && pr.HeadRefName != defaultBranch
 }
 
 func (p Planner) isAncestor(ctx context.Context, ancestor, descendant string) (bool, error) {

@@ -41,7 +41,7 @@ func DefaultKeyMap() KeyMap {
 		),
 		ToggleClean: key.NewBinding(
 			key.WithKeys("c"),
-			key.WithHelp("c", "clean"),
+			key.WithHelp("c", "stale"),
 		),
 		ParallelUp: key.NewBinding(
 			key.WithKeys("p"),

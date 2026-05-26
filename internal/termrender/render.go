@@ -418,7 +418,7 @@ func (c Context) rowStatus(status app.PullStatus, hasWarning bool, action app.Ac
 		case app.PullStateBroken:
 			return "✘", "BROKEN", c.styles.repair
 		case app.PullStateUpdateable:
-			return "✔︎", "UPDATEABLE", c.styles.update
+			return "↻", "STALE", c.styles.update
 		default:
 			return "✔︎", "CLEAN", c.styles.clean
 		}
@@ -428,8 +428,11 @@ func (c Context) rowStatus(status app.PullStatus, hasWarning bool, action app.Ac
 		case app.ActionRepairPR:
 			return "✘", "REPAIR", c.styles.repair
 		case app.ActionUpdateBranch:
-			return "✔︎", "UPDATE", c.styles.update
+			return "↻", "UPDATE", c.styles.update
 		}
+	}
+	if status.State == app.PullStateUpdateable {
+		return "↻", "STALE", c.styles.update
 	}
 	return "✔︎", "CLEAN", c.styles.clean
 }
@@ -447,7 +450,7 @@ func (c Context) displayActionForRow(
 	if hasCurrentAction {
 		return currentAction, true
 	}
-	if hasPreviewAction && previewAction.Reason == app.ReasonParentWillChange {
+	if hasPreviewAction {
 		return previewAction, true
 	}
 	return projectedFollowUpActionForPR(c.preview, pr)
@@ -471,6 +474,8 @@ func (c Context) reasonSuffix(
 		}
 	case c.mode == RowModePlan && hasAction:
 		parts = append(parts, c.planReasonParts(action, status, plain, withCursorBg)...)
+	case c.mode == RowModePlan && status.State == app.PullStateUpdateable:
+		parts = append(parts, c.statusReasonParts(status, plain, withCursorBg)...)
 	case c.mode == RowModeStatus:
 		parts = append(parts, c.statusReasonParts(status, plain, withCursorBg)...)
 	}
@@ -546,7 +551,7 @@ func (c Context) statusReasonParts(
 		}
 		return parts
 	case app.PullStateUpdateable:
-		parts := []string{plain("can update branch")}
+		parts := []string{plain("stale branch")}
 		if detail := c.reasonDetail(status.Reason, status.OriginalBase, app.Action{}, plain, withCursorBg); detail != "" {
 			parts = append(parts, detail)
 		}
@@ -585,6 +590,8 @@ func (c Context) reasonDetail(
 			)
 		}
 		return plain("after parent repair")
+	case app.ReasonBaseStale:
+		return plain("base changed")
 	case app.ReasonRebaseAll:
 		return plain("clean update")
 	default:

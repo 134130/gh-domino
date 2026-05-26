@@ -9,7 +9,6 @@ import (
 
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
-	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/134130/gh-domino/internal/app"
@@ -17,17 +16,15 @@ import (
 	"github.com/134130/gh-domino/internal/termrender"
 )
 
-// PlanLoader rebuilds a plan when the user toggles clean update actions.
+// PlanLoader loads a plan while reporting progress.
 type PlanLoader func(ctx context.Context, includeClean bool, progress app.ProgressSink) (*app.Plan, error)
 
 // Options configures the selector model and program.
 type Options struct {
 	IncludeClean bool
 	Parallel     int
-	LoadPlan     PlanLoader
 	Output       io.Writer
 	NoColor      bool
-	Verbose      bool
 }
 
 // SelectorResult is returned from RunSelector after the user confirms.
@@ -36,32 +33,20 @@ type SelectorResult struct {
 	Parallel int
 }
 
-type phase int
-
-const (
-	phaseSelecting phase = iota
-	phaseLoading
-)
-
 // Model is the bubbletea model for selecting actions from an app.Plan.
 type Model struct {
 	ctx context.Context
 
-	phase   phase
-	spinner spinner.Model
-	help    help.Model
-	keys    KeyMap
+	help help.Model
+	keys KeyMap
 
 	plan       *app.Plan
 	preview    *app.Plan
-	loadPlan   PlanLoader
-	loadErr    error
 	previewErr error
-	progress   progressState
 
 	flat       []termrender.FlatNode
-	statusByPR map[int]app.PullStatus
-	actionByPR map[int]app.Action
+	repairByPR map[int]bool
+	updateByPR map[int]bool
 	parentByPR map[int]int
 
 	mode         app.SelectionMode
@@ -89,9 +74,6 @@ type msgPlanLoaded struct {
 
 // NewModel creates a TUI model from an already built plan.
 func NewModel(ctx context.Context, plan *app.Plan, opts Options) Model {
-	s := spinner.New()
-	s.Spinner = spinner.MiniDot
-
 	parallel := opts.Parallel
 	if parallel < 1 {
 		parallel = 1
@@ -99,15 +81,11 @@ func NewModel(ctx context.Context, plan *app.Plan, opts Options) Model {
 
 	m := Model{
 		ctx:          ctx,
-		phase:        phaseSelecting,
-		spinner:      s,
 		help:         help.New(),
 		keys:         DefaultKeyMap(),
-		loadPlan:     opts.LoadPlan,
 		mode:         app.SelectNode,
 		includeClean: opts.IncludeClean,
 		noColor:      opts.NoColor,
-		progress:     newProgressState("Rebuilding plan", opts.NoColor, opts.Verbose),
 		parallel:     parallel,
 		selected:     make(map[int]bool),
 	}
@@ -143,9 +121,6 @@ func RunSelector(ctx context.Context, plan *app.Plan, opts Options) (*SelectorRe
 	if tuiModel.quit || !tuiModel.confirmed {
 		return nil, nil
 	}
-	if tuiModel.loadErr != nil {
-		return nil, tuiModel.loadErr
-	}
 	if tuiModel.previewErr != nil {
 		return nil, tuiModel.previewErr
 	}
@@ -156,7 +131,7 @@ func RunSelector(ctx context.Context, plan *app.Plan, opts Options) (*SelectorRe
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.spinner.Tick, tea.RequestBackgroundColor)
+	return tea.RequestBackgroundColor
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -172,38 +147,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.help.SetWidth(msg.Width)
 		return m, nil
 
-	case spinner.TickMsg:
-		var cmd tea.Cmd
-		m.spinner, cmd = m.spinner.Update(msg)
-		return m, cmd
-
 	case tea.KeyPressMsg:
 		if key.Matches(msg, m.keys.Quit) {
 			m.quit = true
 			return m, tea.Quit
 		}
-		if m.phase == phaseLoading {
-			return m, nil
-		}
 		return m.updateSelecting(msg)
-
-	case msgPlanLoaded:
-		if msg.err != nil {
-			m.loadErr = msg.err
-			return m, tea.Quit
-		}
-		m.includeClean = msg.includeClean
-		m.phase = phaseSelecting
-		m.setPlan(msg.plan)
-		m.refreshPreview()
-		return m, nil
-
-	case progressMsg:
-		m.progress.apply(msg.event)
-		return m, waitProgressCmd(msg.ch)
-
-	case progressDoneMsg:
-		return m, nil
 	}
 
 	return m, nil
@@ -254,14 +203,7 @@ func (m Model) updateSelecting(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) View() tea.View {
-	var content string
-	switch m.phase {
-	case phaseLoading:
-		content = m.progress.view(m.spinner.View())
-	default:
-		content = m.viewSelecting()
-	}
-	v := tea.NewView(content)
+	v := tea.NewView(m.viewSelecting())
 	v.AltScreen = true
 	return v
 }
@@ -316,8 +258,8 @@ func (m *Model) setPlan(plan *app.Plan) {
 	}
 	m.plan = plan
 	m.flat = termrender.FlattenTree(plan.Roots)
-	m.statusByPR = termrender.StatusesByPR(plan.Pulls)
-	m.actionByPR = termrender.ActionsByPR(plan.Actions)
+	m.repairByPR = repairablePRs(plan)
+	m.updateByPR = updateablePRs(plan)
 	m.parentByPR = termrender.ParentsByPR(plan.Roots)
 	if m.cursor >= len(m.flat) {
 		m.cursor = max(0, len(m.flat)-1)
@@ -393,50 +335,145 @@ func (m *Model) cycleMode() {
 }
 
 func (m *Model) toggleAllActionable() {
-	if len(m.actionByPR) == 0 {
+	repairs := m.repairTargets()
+	updates := m.updateTargets()
+	all := mergeTargets(repairs, updates)
+	if len(all) == 0 {
 		return
 	}
-	allSelected := true
-	for prNumber := range m.actionByPR {
-		if !m.selected[prNumber] {
-			allSelected = false
-			break
-		}
+
+	switch {
+	case allSelected(m.selected, all):
+		m.selected = make(map[int]bool)
+	case len(updates) > 0 && len(repairs) > 0 && allSelected(m.selected, repairs):
+		m.setSelectedTargets(all)
+	case len(repairs) > 0:
+		m.setSelectedTargets(repairs)
+	default:
+		m.setSelectedTargets(all)
 	}
-	if allSelected {
-		for prNumber := range m.actionByPR {
-			delete(m.selected, prNumber)
+}
+
+func (m Model) repairTargets() []int {
+	return m.targetsMatching(func(prNumber int) bool {
+		return m.repairByPR[prNumber]
+	})
+}
+
+func (m Model) updateTargets() []int {
+	return m.targetsMatching(func(prNumber int) bool {
+		return m.updateByPR[prNumber] && !m.repairByPR[prNumber]
+	})
+}
+
+func (m Model) targetsMatching(match func(int) bool) []int {
+	seen := map[int]struct{}{}
+	targets := make([]int, 0)
+	for _, fn := range m.flat {
+		if fn.Node == nil {
+			continue
 		}
-		return
+		prNumber := fn.Node.Value.Number
+		if !match(prNumber) {
+			continue
+		}
+		targets = append(targets, prNumber)
+		seen[prNumber] = struct{}{}
 	}
-	for prNumber := range m.actionByPR {
+	for prNumber := range m.repairByPR {
+		if _, ok := seen[prNumber]; ok || !match(prNumber) {
+			continue
+		}
+		targets = append(targets, prNumber)
+		seen[prNumber] = struct{}{}
+	}
+	for prNumber := range m.updateByPR {
+		if _, ok := seen[prNumber]; ok || !match(prNumber) {
+			continue
+		}
+		targets = append(targets, prNumber)
+		seen[prNumber] = struct{}{}
+	}
+	return targets
+}
+
+func (m *Model) setSelectedTargets(targets []int) {
+	m.selected = make(map[int]bool, len(targets))
+	for _, prNumber := range targets {
 		m.selected[prNumber] = true
 	}
 }
 
 func (m Model) toggleClean() (tea.Model, tea.Cmd) {
 	includeClean := !m.includeClean
-	if m.loadPlan == nil {
-		m.includeClean = includeClean
-		m.refreshPreview()
-		return m, nil
+	m.includeClean = includeClean
+	for _, prNumber := range m.updateTargets() {
+		if includeClean {
+			m.selected[prNumber] = true
+			continue
+		}
+		delete(m.selected, prNumber)
 	}
-	m.phase = phaseLoading
-	m.progress = newProgressState("Rebuilding plan", m.noColor, m.progress.verbose)
-	ch := make(chan app.ProgressEvent, 64)
-	return m, tea.Batch(waitProgressCmd(ch), m.loadPlanCmd(includeClean, channelProgressSink{ch: ch}, ch))
+	m.refreshPreview()
+	return m, nil
 }
 
-func (m Model) loadPlanCmd(includeClean bool, sink app.ProgressSink, ch chan app.ProgressEvent) tea.Cmd {
-	return func() tea.Msg {
-		defer close(ch)
-		plan, err := m.loadPlan(m.ctx, includeClean, sink)
-		return msgPlanLoaded{
-			plan:         plan,
-			includeClean: includeClean,
-			err:          err,
+func allSelected(selected map[int]bool, targets []int) bool {
+	if len(targets) == 0 {
+		return false
+	}
+	for _, prNumber := range targets {
+		if !selected[prNumber] {
+			return false
 		}
 	}
+	return true
+}
+
+func mergeTargets(groups ...[]int) []int {
+	seen := map[int]struct{}{}
+	out := make([]int, 0)
+	for _, group := range groups {
+		for _, prNumber := range group {
+			if _, ok := seen[prNumber]; ok {
+				continue
+			}
+			out = append(out, prNumber)
+			seen[prNumber] = struct{}{}
+		}
+	}
+	return out
+}
+
+func repairablePRs(plan *app.Plan) map[int]bool {
+	out := map[int]bool{}
+	if plan == nil {
+		return out
+	}
+	for _, action := range plan.Actions {
+		if action.Kind == app.ActionRepairPR {
+			out[action.PR.Number] = true
+		}
+	}
+	return out
+}
+
+func updateablePRs(plan *app.Plan) map[int]bool {
+	out := map[int]bool{}
+	if plan == nil {
+		return out
+	}
+	for _, status := range plan.Pulls {
+		if status.State == app.PullStateUpdateable {
+			out[status.PR.Number] = true
+		}
+	}
+	for _, action := range plan.Actions {
+		if action.Kind == app.ActionUpdateBranch {
+			out[action.PR.Number] = true
+		}
+	}
+	return out
 }
 
 func (m Model) viewSelecting() string {
@@ -485,9 +522,9 @@ func (m Model) viewSelecting() string {
 
 func (m Model) renderHeader() string {
 	left := "Pull Requests"
-	clean := "clean off"
+	clean := "stale off"
 	if m.includeClean {
-		clean = "clean on"
+		clean = "stale on"
 	}
 	right := fmt.Sprintf("mode %s · parallel %d · %s", m.mode, m.parallel, clean)
 

@@ -21,6 +21,7 @@ func (p *Plan) Select(selection Selection) (*Plan, error) {
 
 	tree := indexTree(p.Roots)
 	selectedPRs := map[int]struct{}{}
+	explicitSelection := len(selection.Items) > 0
 	if len(selection.Items) == 0 {
 		for prNumber := range tree.nodes {
 			selectedPRs[prNumber] = struct{}{}
@@ -65,16 +66,29 @@ func (p *Plan) Select(selection Selection) (*Plan, error) {
 		action, ok := currentActionsByPR[status.PR.Number]
 		if !ok {
 			parentActionID := selectedActionByHead[status.PR.BaseRefName]
-			if parentActionID == "" {
+			switch {
+			case parentActionID != "":
+				action = Action{
+					ID:        fmt.Sprintf("repair-pr-%d", status.PR.Number),
+					Kind:      ActionRepairPR,
+					PR:        status.PR,
+					NewBase:   status.PR.BaseRefName,
+					Reason:    ReasonParentWillChange,
+					DependsOn: []string{parentActionID},
+				}
+			case explicitSelection && status.State == PullStateUpdateable:
+				reason := status.Reason
+				if reason == "" {
+					reason = ReasonRebaseAll
+				}
+				action = Action{
+					ID:     fmt.Sprintf("update-branch-%d", status.PR.Number),
+					Kind:   ActionUpdateBranch,
+					PR:     status.PR,
+					Reason: reason,
+				}
+			default:
 				continue
-			}
-			action = Action{
-				ID:        fmt.Sprintf("repair-pr-%d", status.PR.Number),
-				Kind:      ActionRepairPR,
-				PR:        status.PR,
-				NewBase:   status.PR.BaseRefName,
-				Reason:    ReasonParentWillChange,
-				DependsOn: []string{parentActionID},
 			}
 		}
 

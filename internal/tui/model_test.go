@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"github.com/134130/gh-domino/gitobj"
 	"github.com/134130/gh-domino/internal/app"
@@ -57,41 +56,45 @@ func TestModelSubtreeAndChainPreviewActions(t *testing.T) {
 	assertActionIDs(t, m.Preview(), []string{"repair-pr-52", "repair-pr-53", "repair-pr-56"})
 }
 
-func TestModelCleanToggleReloadsPlanAndUpdatesPreview(t *testing.T) {
-	noClean := tuiTestPlan(false)
-	withClean := tuiTestPlan(true)
-	var requested []bool
-	m := NewModel(context.Background(), noClean, Options{
-		LoadPlan: func(_ context.Context, includeClean bool, _ app.ProgressSink) (*app.Plan, error) {
-			requested = append(requested, includeClean)
-			if includeClean {
-				return withClean, nil
-			}
-			return noClean, nil
-		},
-	})
+func TestModelCleanToggleSelectsStaleWithoutReload(t *testing.T) {
+	m := NewModel(context.Background(), tuiTestPlan(false), Options{})
 
 	press(t, &m, "a")
 	assertActionIDs(t, m.Preview(), []string{"repair-pr-52"})
 
 	cmd := press(t, &m, "c")
-	runCmd(t, &m, cmd)
+	if cmd != nil {
+		t.Fatalf("did not expect clean toggle to reload")
+	}
 	if !m.IncludeClean() {
-		t.Fatalf("expected clean updates to be included")
+		t.Fatalf("expected stale updates to be included")
 	}
-	if !reflect.DeepEqual(requested, []bool{true}) {
-		t.Fatalf("requested include-clean mismatch: %#v", requested)
-	}
-
-	press(t, &m, "a")
 	assertActionIDs(t, m.Preview(), []string{"repair-pr-52", "update-branch-54"})
 
 	cmd = press(t, &m, "c")
-	runCmd(t, &m, cmd)
+	if cmd != nil {
+		t.Fatalf("did not expect clean toggle to reload")
+	}
 	if m.IncludeClean() {
-		t.Fatalf("expected clean updates to be excluded")
+		t.Fatalf("expected stale updates to be excluded")
 	}
 	assertActionIDs(t, m.Preview(), []string{"repair-pr-52"})
+}
+
+func TestModelAllToggleCyclesRepairsStaleAndClear(t *testing.T) {
+	m := NewModel(context.Background(), tuiTestPlan(false), Options{})
+
+	press(t, &m, "a")
+	assertActionIDs(t, m.Preview(), []string{"repair-pr-52"})
+
+	press(t, &m, "a")
+	assertActionIDs(t, m.Preview(), []string{"repair-pr-52", "update-branch-54"})
+	if row := m.renderRow(2); !strings.Contains(row, "update branch") {
+		t.Fatalf("expected selected stale row to render update action, got %q", row)
+	}
+
+	press(t, &m, "a")
+	assertActionIDs(t, m.Preview(), []string{})
 }
 
 func TestModelCleanNodeSelectionCreatesNoActionOrWarning(t *testing.T) {
@@ -200,13 +203,6 @@ func TestModelQuitAndConfirmResult(t *testing.T) {
 	assertActionIDs(t, m.Preview(), []string{"repair-pr-52"})
 }
 
-func TestModelUsesMiniDotSpinner(t *testing.T) {
-	m := NewModel(context.Background(), tuiTestPlan(false), Options{})
-	if !reflect.DeepEqual(m.spinner.Spinner.Frames, spinner.MiniDot.Frames) {
-		t.Fatalf("spinner frames mismatch: %#v", m.spinner.Spinner.Frames)
-	}
-}
-
 func TestPlanLoadModelCtrlCCancelsAndQuits(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	m := planLoadModel{ctx: ctx, cancel: cancel}
@@ -252,45 +248,6 @@ func press(t *testing.T, m *Model, key string) tea.Cmd {
 	}
 	*m = next
 	return cmd
-}
-
-func runCmd(t *testing.T, m *Model, cmd tea.Cmd) {
-	t.Helper()
-	if cmd == nil {
-		t.Fatalf("expected command")
-	}
-	msg := cmd()
-	if batch, ok := msg.(tea.BatchMsg); ok {
-		messages := make(chan tea.Msg, len(batch))
-		for _, batchCmd := range batch {
-			go func(cmd tea.Cmd) {
-				messages <- cmd()
-			}(batchCmd)
-		}
-		for range batch {
-			model, nextCmd := m.Update(<-messages)
-			next, ok := model.(Model)
-			if !ok {
-				t.Fatalf("unexpected model type %T", model)
-			}
-			*m = next
-			if nextCmd != nil {
-				model, _ = m.Update(nextCmd())
-				next, ok = model.(Model)
-				if !ok {
-					t.Fatalf("unexpected model type %T", model)
-				}
-				*m = next
-			}
-		}
-		return
-	}
-	model, _ := m.Update(msg)
-	next, ok := model.(Model)
-	if !ok {
-		t.Fatalf("unexpected model type %T", model)
-	}
-	*m = next
 }
 
 func assertQuitCmd(t *testing.T, cmd tea.Cmd) {
@@ -363,8 +320,9 @@ func tuiTestPlan(includeClean bool) *app.Plan {
 			PR:    child.Value,
 			State: app.PullStateClean,
 		}, {
-			PR:    other.Value,
-			State: app.PullStateClean,
+			PR:     other.Value,
+			State:  app.PullStateUpdateable,
+			Reason: app.ReasonBaseStale,
 		}},
 		Actions: []app.Action{{
 			ID:      "repair-pr-52",
@@ -375,13 +333,11 @@ func tuiTestPlan(includeClean bool) *app.Plan {
 		}},
 	}
 	if includeClean {
-		plan.Pulls[2].State = app.PullStateUpdateable
-		plan.Pulls[2].Reason = app.ReasonRebaseAll
 		plan.Actions = append(plan.Actions, app.Action{
 			ID:     "update-branch-54",
 			Kind:   app.ActionUpdateBranch,
 			PR:     other.Value,
-			Reason: app.ReasonRebaseAll,
+			Reason: app.ReasonBaseStale,
 		})
 	}
 	return plan

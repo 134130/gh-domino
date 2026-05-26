@@ -23,6 +23,7 @@ const (
 	ReasonParentDiverged   Reason = "parent_diverged"
 	ReasonParentWillChange Reason = "parent_will_change"
 	ReasonMergedAncestor   Reason = "merged_ancestor"
+	ReasonBaseStale        Reason = "base_stale"
 	ReasonRebaseAll        Reason = "rebase_all"
 )
 

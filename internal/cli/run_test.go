@@ -228,9 +228,6 @@ func TestRunDefaultUsesTUIPathAndQuitSkipsExecute(t *testing.T) {
 		if got != plan {
 			t.Fatalf("selector got unexpected plan")
 		}
-		if opts.LoadPlan == nil {
-			t.Fatalf("expected clean-toggle plan loader")
-		}
 		return nil, nil
 	}
 	executePlanFunc = func(context.Context, Config, *app.Plan, int, app.ProgressSink) (*app.RunResult, error) {

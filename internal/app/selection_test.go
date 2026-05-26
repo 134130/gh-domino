@@ -62,6 +62,44 @@ func TestPlanSelectCleanNodeCreatesNoAction(t *testing.T) {
 	}
 }
 
+func TestPlanSelectExplicitUpdateableNodeCreatesUpdateAction(t *testing.T) {
+	plan := selectionTestPlan()
+	plan.Actions = plan.Actions[:1]
+
+	selected, err := plan.Select(Selection{Items: []SelectionItem{{
+		PRNumber: 54,
+		Mode:     SelectNode,
+	}}})
+	if err != nil {
+		t.Fatalf("Select returned error: %v", err)
+	}
+
+	got := actionIDs(selected.Actions)
+	want := []string{"update-branch-54"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("selected actions mismatch\nwant: %#v\n got: %#v", want, got)
+	}
+	if got, want := selected.Actions[0].Reason, ReasonRebaseAll; got != want {
+		t.Fatalf("reason mismatch: want %q, got %q", want, got)
+	}
+}
+
+func TestPlanSelectAllDoesNotSynthesizeUpdateActions(t *testing.T) {
+	plan := selectionTestPlan()
+	plan.Actions = plan.Actions[:1]
+
+	selected, err := plan.Select(Selection{})
+	if err != nil {
+		t.Fatalf("Select returned error: %v", err)
+	}
+
+	got := actionIDs(selected.Actions)
+	want := []string{"repair-pr-52", "repair-pr-53"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("selected actions mismatch\nwant: %#v\n got: %#v", want, got)
+	}
+}
+
 func TestPlanSelectBrokenNodeWarnsAboutUnselectedDependency(t *testing.T) {
 	plan := dependencyWarningTestPlan()
 

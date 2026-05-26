@@ -67,10 +67,8 @@ func runTUI(ctx context.Context, cfg Config, stdout, _ io.Writer) error {
 	result, err := runSelectorFunc(ctx, plan, tui.Options{
 		IncludeClean: cfg.IncludeClean,
 		Parallel:     cfg.Parallel,
-		LoadPlan:     loadPlan,
 		Output:       stdout,
 		NoColor:      cfg.NoColor,
-		Verbose:      cfg.Verbose,
 	})
 	if err != nil {
 		return err
