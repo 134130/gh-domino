@@ -188,9 +188,6 @@ func executePlan(ctx context.Context, cfg Config, plan *app.Plan, parallel int, 
 }
 
 func buildPlan(ctx context.Context, cfg Config, progress app.ProgressSink) (*app.Plan, error) {
-	if cfg.Repo != "" {
-		return nil, fmt.Errorf("--repo is not implemented yet")
-	}
 	runner := app.NewProgressRunner(gitcmd.NewRunner(), progress)
 	store := gitkitstore.New(runner)
 	opts := cfg.PlanOptions()

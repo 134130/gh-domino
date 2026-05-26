@@ -124,7 +124,6 @@ func defaultConfig() Config {
 
 func addGlobalFlags(cmd *cobra.Command, cfg *Config, jsonFlag *bool) {
 	flags := cmd.PersistentFlags()
-	flags.StringVar(&cfg.Repo, "repo", cfg.Repo, "GitHub repository override")
 	flags.StringVar(&cfg.Remote, "remote", cfg.Remote, "Git remote to fetch and inspect")
 	flags.StringVar(&cfg.Author, "author", cfg.Author, "PR author filter")
 	flags.IntVar(&cfg.MergedLimit, "merged-limit", cfg.MergedLimit, "Recently merged PR lookup limit")

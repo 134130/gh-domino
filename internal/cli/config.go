@@ -20,7 +20,6 @@ const (
 type Config struct {
 	Command Command
 
-	Repo        string
 	Remote      string
 	Author      string
 	MergedLimit int
