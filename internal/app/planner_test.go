@@ -133,6 +133,39 @@ func TestPlannerMarksMergedAncestorReason(t *testing.T) {
 	}
 }
 
+func TestPlannerIgnoresMergedAncestorWhenDefaultBranchAlreadyInHead(t *testing.T) {
+	ctx := context.Background()
+	store := newFakeStore()
+	store.ancestors[pair("origin/main", "sha-feature")] = true
+	store.ancestors[pair("p1c1", "sha-feature")] = true
+	store.mergeBases[pair("origin/main", "sha-feature")] = "sha-main"
+
+	plan, err := NewPlanner(store).Build(ctx, Snapshot{
+		OpenPullRequests: []gitobj.PullRequest{
+			pr(52, "bar", "main", "feature"),
+		},
+		MergedPullRequests: []gitobj.PullRequest{
+			withCommits(pr(51, "foo", "main", "stack-1"), "p1c1"),
+		},
+		HeadSHAs: map[string]string{
+			"feature": "sha-feature",
+		},
+	}, PlanOptions{})
+	if err != nil {
+		t.Fatalf("Build returned error: %v", err)
+	}
+
+	if len(plan.Actions) != 0 {
+		t.Fatalf("expected no actions, got %#v", plan.Actions)
+	}
+	if got, want := plan.Pulls[0].State, PullStateClean; got != want {
+		t.Fatalf("state mismatch: want %q, got %q", want, got)
+	}
+	if plan.Pulls[0].OriginalBase != nil {
+		t.Fatalf("expected no original base, got #%d", plan.Pulls[0].OriginalBase.Number)
+	}
+}
+
 func TestPlannerIgnoresMergedPRCommitsMissingLocally(t *testing.T) {
 	ctx := context.Background()
 	store := newFakeStore()

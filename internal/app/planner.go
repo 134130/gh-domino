@@ -443,6 +443,15 @@ func (p Planner) buildDependencyTree(
 			continue
 		}
 
+		baseRef := fmt.Sprintf("%s/%s", opts.Remote, node.Value.BaseRefName)
+		baseIsAncestor, err := p.isAncestor(ctx, baseRef, headSHAs[node.Value.HeadRefName])
+		if err != nil {
+			return nil, fmt.Errorf("check ancestry for %s: %w", baseRef, err)
+		}
+		if baseIsAncestor {
+			continue
+		}
+
 		for i, mergedPR := range mergedPRs {
 			if len(mergedPR.Commits) == 0 {
 				continue
