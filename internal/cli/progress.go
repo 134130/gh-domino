@@ -149,6 +149,11 @@ func isTerminalWriter(w io.Writer) bool {
 	return ok && term.IsTerminal(int(file.Fd()))
 }
 
+func isTerminalReader(r io.Reader) bool {
+	file, ok := r.(*os.File)
+	return ok && term.IsTerminal(int(file.Fd()))
+}
+
 var progressStyle = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(6))
 
 func successStyle(noColor bool) lipgloss.Style {

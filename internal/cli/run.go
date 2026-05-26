@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/134130/gh-domino/internal/app"
 	"github.com/134130/gh-domino/internal/app/gitkitexec"
@@ -14,18 +15,23 @@ import (
 )
 
 var (
-	buildPlanFunc   = buildPlan
-	runSelectorFunc = tui.RunSelector
-	executePlanFunc = executePlan
+	buildPlanFunc        = buildPlan
+	runSelectorFunc      = tui.RunSelector
+	executePlanFunc      = executePlan
+	isTerminalReaderFunc = isTerminalReader
 )
 
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
-	cmd := newCommand(stdout, stderr, runConfig)
+	return RunWithIO(ctx, args, os.Stdin, stdout, stderr)
+}
+
+func RunWithIO(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+	cmd := newCommand(stdin, stdout, stderr, runConfig)
 	cmd.SetArgs(args)
 	return cmd.ExecuteContext(ctx)
 }
 
-func runConfig(ctx context.Context, cfg Config, stdout, stderr io.Writer) error {
+func runConfig(ctx context.Context, cfg Config, stdin io.Reader, stdout, stderr io.Writer) error {
 	switch cfg.Command {
 	case CommandTUI:
 		return runTUI(ctx, cfg, stdout, stderr)
@@ -34,7 +40,7 @@ func runConfig(ctx context.Context, cfg Config, stdout, stderr io.Writer) error 
 	case CommandPlan:
 		return runPlan(ctx, cfg, stdout, stderr)
 	case CommandMerge:
-		return runMerge(ctx, cfg, stdout, stderr)
+		return runMerge(ctx, cfg, stdin, stdout, stderr)
 	default:
 		return fmt.Errorf("unknown command: %s", cfg.Command)
 	}
@@ -121,12 +127,15 @@ func runPlan(ctx context.Context, cfg Config, stdout, stderr io.Writer) error {
 	})
 }
 
-func runMerge(ctx context.Context, cfg Config, stdout, stderr io.Writer) error {
+func runMerge(ctx context.Context, cfg Config, stdin io.Reader, stdout, stderr io.Writer) error {
 	if cfg.DryRun {
 		return runPlan(ctx, cfg, stdout, stderr)
 	}
-	if !cfg.Yes {
-		return fmt.Errorf("merge requires --yes until TUI confirmation is implemented")
+	if !cfg.Yes && cfg.Format == output.FormatJSON {
+		return fmt.Errorf("merge requires --yes or --dry-run with --format json")
+	}
+	if !cfg.Yes && !isTerminalReaderFunc(stdin) {
+		return fmt.Errorf("merge requires --yes when stdin is not a terminal")
 	}
 
 	progress := commandProgress(cfg, stderr)
@@ -135,12 +144,31 @@ func runMerge(ctx context.Context, cfg Config, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	plan, err = plan.Select(cfg.Selection())
+	selected, err := plan.Select(cfg.Selection())
 	if err != nil {
 		return err
 	}
 
-	result, err := executePlanFunc(ctx, cfg, plan, cfg.Parallel, progress.sink())
+	if !cfg.Yes {
+		if err := output.RenderPlan(stdout, plan, selected, output.PlanOptions{
+			Format:  cfg.Format,
+			NoColor: cfg.NoColor,
+		}); err != nil {
+			return err
+		}
+		if len(selected.Actions) == 0 {
+			return nil
+		}
+		confirmed, err := confirm(stdin, stderr, "Run selected actions?")
+		if err != nil {
+			return err
+		}
+		if !confirmed {
+			return nil
+		}
+	}
+
+	result, err := executePlanFunc(ctx, cfg, selected, cfg.Parallel, progress.sink())
 	if result != nil {
 		if renderErr := output.RenderRunResult(stdout, result, cfg.Format, cfg.NoColor); renderErr != nil {
 			return renderErr

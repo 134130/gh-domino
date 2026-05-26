@@ -18,12 +18,11 @@ The tool works with all of GitHub's merge strategies (Merge Commit, Squash and M
 
 Since v3.0.0, `gh-domino` includes several utilities to make stack management safer and more predictable:
 
-*   **Interactive TUI (`gh domino`)**: Visually inspect your stacked PRs and identify broken dependencies at a glance. **(Currently, executing rebases is only supported via the TUI).**
+*   **Interactive TUI (`gh domino`)**: Visually inspect your stacked PRs and confirm repairs from a terminal UI.
 *   **Dry-run Planning (`gh domino plan`)**: Safely preview the exact rebase and branch update operations before making any changes.
+*   **CLI Execution (`gh domino merge`)**: Print the selected plan, ask for confirmation, then execute it. Use `--yes` for noninteractive automation.
 *   **Concurrent Operations (`--parallel`)**: Process independent PR stacks in parallel for faster updates.
 *   **Flexible Filtering**: Use flags like `--author` and `--merged-limit` to narrow down the target PRs.
-
-> **Note:** The standalone `merge` command is currently under development. To perform actual rebase and update actions, please use the interactive TUI (`gh domino`).
 
 ## Installation
 
@@ -37,6 +36,14 @@ Navigate to your repository and run:
 
 ```bash
 gh domino
+```
+
+To preview or execute from the command line:
+
+```bash
+gh domino plan
+gh domino merge
+gh domino merge --yes --chain 52
 ```
 
 ## Comparison with other tools

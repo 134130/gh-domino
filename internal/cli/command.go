@@ -3,16 +3,17 @@ package cli
 import (
 	"context"
 	"io"
+	"strings"
 
 	"github.com/134130/gh-domino/internal/output"
 	"github.com/spf13/cobra"
 )
 
-type commandHandler func(context.Context, Config, io.Writer, io.Writer) error
+type commandHandler func(context.Context, Config, io.Reader, io.Writer, io.Writer) error
 
 func Parse(args []string) (Config, error) {
 	var parsed Config
-	cmd := newCommand(io.Discard, io.Discard, func(_ context.Context, cfg Config, _, _ io.Writer) error {
+	cmd := newCommand(strings.NewReader(""), io.Discard, io.Discard, func(_ context.Context, cfg Config, _ io.Reader, _, _ io.Writer) error {
 		parsed = cfg
 		return nil
 	})
@@ -20,7 +21,7 @@ func Parse(args []string) (Config, error) {
 	return parsed, cmd.ExecuteContext(context.Background())
 }
 
-func newCommand(stdout, stderr io.Writer, handler commandHandler) *cobra.Command {
+func newCommand(stdin io.Reader, stdout, stderr io.Writer, handler commandHandler) *cobra.Command {
 	cfg := defaultConfig()
 	jsonFlag := false
 
@@ -38,7 +39,7 @@ func newCommand(stdout, stderr io.Writer, handler commandHandler) *cobra.Command
 					return err
 				}
 			}
-			return handler(cmd.Context(), cfg, stdout, stderr)
+			return handler(cmd.Context(), cfg, stdin, stdout, stderr)
 		}
 	}
 
