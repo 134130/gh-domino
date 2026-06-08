@@ -336,7 +336,7 @@ func (p Planner) determinePRState(
 	opts PlanOptions,
 ) (state PullState, reason Reason, newBase string, upstream string, err error) {
 	if originalBase != nil {
-		upstream, err := p.squashUpstream(ctx, *originalBase)
+		upstream, err := p.squashUpstreamForChild(ctx, pr, *originalBase)
 		if err != nil {
 			return PullStateClean, ReasonNone, "", "", err
 		}
@@ -349,7 +349,7 @@ func (p Planner) determinePRState(
 
 	if _, isStackedPR := prByHead[pr.BaseRefName]; !isStackedPR {
 		if mergedBasePR, isMerged := mergedByHead[pr.BaseRefName]; isMerged {
-			upstream, err := p.squashUpstream(ctx, mergedBasePR)
+			upstream, err := p.squashUpstreamForChild(ctx, pr, mergedBasePR)
 			if err != nil {
 				return PullStateClean, ReasonNone, "", "", err
 			}
@@ -444,6 +444,19 @@ func (p Planner) squashUpstream(ctx context.Context, pr gitobj.PullRequest) (str
 	return pr.Commits[len(pr.Commits)-1].Oid, nil
 }
 
+func (p Planner) squashUpstreamForChild(ctx context.Context, child, base gitobj.PullRequest) (string, error) {
+	upstream, err := p.squashUpstream(ctx, base)
+	if err != nil || upstream == "" {
+		return upstream, err
+	}
+
+	end, ok := matchingCommitSequenceEnd(child.Commits, base.Commits)
+	if !ok || end >= len(child.Commits)-1 {
+		return upstream, nil
+	}
+	return child.Commits[end].Oid, nil
+}
+
 func (p Planner) buildDependencyTree(
 	ctx context.Context,
 	prs []gitobj.PullRequest,
@@ -512,27 +525,127 @@ func (p Planner) buildDependencyTree(
 			continue
 		}
 
-		for i, mergedPR := range mergedPRs {
-			if len(mergedPR.Commits) == 0 {
-				continue
-			}
-			if mergedPR.BaseRefName != node.Value.BaseRefName {
-				continue
-			}
-
-			ancestorCommit := mergedPR.Commits[0].Oid
-			isAncestor, err := p.isAncestor(ctx, ancestorCommit, headSHAs[node.Value.HeadRefName])
-			if err == nil && isAncestor {
-				node.OriginalBase = &mergedPRs[i]
-				break
-			}
-			if err != nil {
-				return nil, fmt.Errorf("check ancestry for commit %s: %w", ancestorCommit, err)
-			}
+		originalBase, err := p.bestMergedOriginalBase(ctx, node.Value, mergedPRs, headSHAs[node.Value.HeadRefName])
+		if err != nil {
+			return nil, err
+		}
+		if originalBase != nil {
+			node.OriginalBase = originalBase
 		}
 	}
 
 	return roots, nil
+}
+
+func (p Planner) bestMergedOriginalBase(
+	ctx context.Context,
+	pr gitobj.PullRequest,
+	mergedPRs []gitobj.PullRequest,
+	headSHA string,
+) (*gitobj.PullRequest, error) {
+	if len(pr.Commits) > 1 {
+		bestIndex := -1
+		bestEnd := -1
+		for i := range mergedPRs {
+			mergedPR := mergedPRs[i]
+			if !sameDefaultBaseCandidate(pr, mergedPR) {
+				continue
+			}
+			end, ok := matchingCommitSequenceEnd(pr.Commits, mergedPR.Commits)
+			if !ok || end >= len(pr.Commits)-1 {
+				continue
+			}
+			if bestIndex < 0 || end > bestEnd || end == bestEnd && newerPullNumber(mergedPR, mergedPRs[bestIndex]) {
+				bestIndex = i
+				bestEnd = end
+			}
+		}
+		if bestIndex >= 0 {
+			return &mergedPRs[bestIndex], nil
+		}
+	}
+
+	bestIndex := -1
+	for i := range mergedPRs {
+		mergedPR := mergedPRs[i]
+		if !sameDefaultBaseCandidate(pr, mergedPR) {
+			continue
+		}
+
+		ancestorCommit := mergedPR.Commits[len(mergedPR.Commits)-1].Oid
+		isAncestor, err := p.isAncestor(ctx, ancestorCommit, headSHA)
+		if err != nil {
+			return nil, fmt.Errorf("check ancestry for commit %s: %w", ancestorCommit, err)
+		}
+		if !isAncestor {
+			continue
+		}
+
+		if bestIndex < 0 || newerPullNumber(mergedPR, mergedPRs[bestIndex]) {
+			bestIndex = i
+		}
+	}
+	if bestIndex >= 0 {
+		return &mergedPRs[bestIndex], nil
+	}
+	return nil, nil
+}
+
+func sameDefaultBaseCandidate(pr, mergedPR gitobj.PullRequest) bool {
+	if len(mergedPR.Commits) == 0 {
+		return false
+	}
+	if mergedPR.BaseRefName != pr.BaseRefName {
+		return false
+	}
+	if pr.Number > 0 && mergedPR.Number >= pr.Number {
+		return false
+	}
+	return true
+}
+
+func newerPullNumber(a, b gitobj.PullRequest) bool {
+	return a.Number > b.Number
+}
+
+func matchingCommitSequenceEnd(target, pattern []gitobj.PullRequestCommit) (int, bool) {
+	if len(target) == 0 || len(pattern) == 0 || len(pattern) > len(target) {
+		return -1, false
+	}
+
+	bestEnd := -1
+	for start := 0; start <= len(target)-len(pattern); start++ {
+		if commitSequencesMatch(target[start:start+len(pattern)], pattern, sameCommitOID) ||
+			commitSequencesMatch(target[start:start+len(pattern)], pattern, sameCommitHeadline) {
+			bestEnd = start + len(pattern) - 1
+		}
+	}
+
+	if bestEnd < 0 {
+		return -1, false
+	}
+	return bestEnd, true
+}
+
+func commitSequencesMatch(
+	target []gitobj.PullRequestCommit,
+	pattern []gitobj.PullRequestCommit,
+	same func(gitobj.PullRequestCommit, gitobj.PullRequestCommit) bool,
+) bool {
+	for i := range pattern {
+		if !same(target[i], pattern[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func sameCommitOID(a, b gitobj.PullRequestCommit) bool {
+	return a.Oid != "" && a.Oid == b.Oid
+}
+
+func sameCommitHeadline(a, b gitobj.PullRequestCommit) bool {
+	return a.MessageHeadline != "" && a.MessageHeadline == b.MessageHeadline
 }
 
 func isStackableHead(pr gitobj.PullRequest, defaultBranch string) bool {

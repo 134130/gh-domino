@@ -72,6 +72,62 @@ func TestPlannerUsesUpstreamForSquashMergedBase(t *testing.T) {
 	}
 }
 
+func TestPlannerUsesCurrentPRCommitForRebasedSquashMergedAncestor(t *testing.T) {
+	ctx := context.Background()
+	store := newFakeStore()
+	store.defaultBranch = "develop"
+
+	current := withCommitHeadlines(
+		pr(1051, "Seed TCP forward metadata", "develop", "codex/tcp-forward-metadata-seed"),
+		commit("cfbcf3027ffdb60611d842d6c2df9922f994002e", "Extract connector backend route selector"),
+		commit("73637c81c41a17bdefaad260f4ee1ec3e62298d4", "Stabilize RST handler close test"),
+		commit("d813972fc74b117239c85af98a915acdf3d44c54", "Extract TCP allowed connection opener"),
+		commit("2befb59855685cfdde47a5ac25e0a6cb3cb66dd7", "use errors.AsType"),
+		commit("c6eb2fc6bf063c0fa3f638384450094fac7f2f11", "Seed TCP forward metadata"),
+	)
+
+	plan, err := NewPlanner(store).Build(ctx, Snapshot{
+		OpenPullRequests: []gitobj.PullRequest{current},
+		MergedPullRequests: []gitobj.PullRequest{
+			withMerge(withCommitHeadlines(
+				pr(1048, "Extract connector backend route selector", "develop", "codex/connector-route-selector"),
+				commit("cfbcf3027ffdb60611d842d6c2df9922f994002e", "Extract connector backend route selector"),
+			), "merge-1048"),
+			withMerge(withCommitHeadlines(
+				pr(1049, "Use connector route selector in TCP forwarder", "develop", "codex/tcp-connector-route-selector"),
+				commit("cfbcf3027ffdb60611d842d6c2df9922f994002e", "Extract connector backend route selector"),
+				commit("73637c81c41a17bdefaad260f4ee1ec3e62298d4", "Stabilize RST handler close test"),
+			), "merge-1049"),
+			withMerge(withCommitHeadlines(
+				pr(1050, "Extract TCP allowed connection opener", "develop", "codex/tcp-allowed-connection-opener"),
+				commit("286de703c3a9b1267b825741f9176248943c0a7c", "Extract TCP allowed connection opener"),
+				commit("87e6379d885e11d2840ba631e397e2d205d54ef2", "use errors.AsType"),
+			), "merge-1050"),
+		},
+		HeadSHAs: map[string]string{
+			"codex/tcp-forward-metadata-seed": "c6eb2fc6bf063c0fa3f638384450094fac7f2f11",
+		},
+	}, PlanOptions{})
+	if err != nil {
+		t.Fatalf("Build returned error: %v", err)
+	}
+
+	if len(plan.Actions) != 1 {
+		t.Fatalf("expected 1 action, got %d", len(plan.Actions))
+	}
+	action := plan.Actions[0]
+	if got, want := action.NewBase, "develop"; got != want {
+		t.Fatalf("new base mismatch: want %q, got %q", want, got)
+	}
+	if got, want := action.Upstream, "2befb59855685cfdde47a5ac25e0a6cb3cb66dd7"; got != want {
+		t.Fatalf("upstream mismatch: want %q, got %q", want, got)
+	}
+	status := statusForPR(t, plan, 1051)
+	if status.OriginalBase == nil || status.OriginalBase.Number != 1050 {
+		t.Fatalf("expected original base #1050, got %#v", status.OriginalBase)
+	}
+}
+
 func TestPlannerIncludesCleanPRsWhenRequested(t *testing.T) {
 	ctx := context.Background()
 	store := newFakeStore()
@@ -297,11 +353,18 @@ func pr(number int, title, base, head string) gitobj.PullRequest {
 
 func withCommits(pr gitobj.PullRequest, commits ...string) gitobj.PullRequest {
 	for _, commit := range commits {
-		pr.Commits = append(pr.Commits, struct {
-			Oid string `json:"oid"`
-		}{Oid: commit})
+		pr.Commits = append(pr.Commits, gitobj.PullRequestCommit{Oid: commit})
 	}
 	return pr
+}
+
+func withCommitHeadlines(pr gitobj.PullRequest, commits ...gitobj.PullRequestCommit) gitobj.PullRequest {
+	pr.Commits = append(pr.Commits, commits...)
+	return pr
+}
+
+func commit(oid, headline string) gitobj.PullRequestCommit {
+	return gitobj.PullRequestCommit{Oid: oid, MessageHeadline: headline}
 }
 
 func withMerge(pr gitobj.PullRequest, sha string) gitobj.PullRequest {

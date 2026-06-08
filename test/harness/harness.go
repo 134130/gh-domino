@@ -465,9 +465,7 @@ func (pr PR) GitObject() gitobj.PullRequest {
 	out.Author.Login = "test-user"
 	out.MergeCommit.Sha = pr.MergeCommit
 	for _, commit := range pr.Commits {
-		out.Commits = append(out.Commits, struct {
-			Oid string `json:"oid"`
-		}{Oid: commit})
+		out.Commits = append(out.Commits, gitobj.PullRequestCommit{Oid: commit})
 	}
 	return out
 }

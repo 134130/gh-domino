@@ -33,11 +33,14 @@ type PullRequest struct {
 	MergeCommit struct {
 		Sha string `json:"oid"`
 	} `json:"mergeCommit"`
-	BaseRefName string `json:"baseRefName"`
-	HeadRefName string `json:"headRefName"`
-	Commits     []struct {
-		Oid string `json:"oid"`
-	} `json:"commits"`
+	BaseRefName string              `json:"baseRefName"`
+	HeadRefName string              `json:"headRefName"`
+	Commits     []PullRequestCommit `json:"commits"`
+}
+
+type PullRequestCommit struct {
+	Oid             string `json:"oid"`
+	MessageHeadline string `json:"messageHeadline"`
 }
 
 func (pr PullRequest) String() string {
