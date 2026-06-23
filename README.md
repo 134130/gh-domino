@@ -32,19 +32,31 @@ gh extension install 134130/gh-domino
 
 ## Usage
 
-Navigate to your repository and run:
+Navigate to your repository and run the interactive TUI:
 
 ```bash
 gh domino
 ```
 
-To preview or execute from the command line:
+For CLI-first workflows, inspect the stack, preview the repair plan, then execute it:
 
 ```bash
+gh domino list --state broken
 gh domino plan
+gh domino plan --chain 52
 gh domino merge
-gh domino merge --yes --chain 52
+gh domino merge --yes --chain 52 --parallel 4
 ```
+
+Use `plan` first to inspect the exact rebase and PR base-update actions before changing branches. `merge` prints the selected plan and asks for confirmation unless `--yes` is set. `merge --dry-run` prints the selected plan without mutating, like `plan`.
+
+Selection flags let you narrow the plan:
+
+*   `--pr <number>` selects only actions targeting that PR.
+*   `--subtree <number>` selects that PR and its descendants.
+*   `--chain <number>` selects the dependency chain from the upper/root PR down to that PR, so parent actions run before child actions.
+
+`--parallel` is best-effort: independent stacks can run concurrently when dependencies allow, but PRs in the same chain are still processed from parent to child.
 
 ## Comparison with other tools
 

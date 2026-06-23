@@ -293,6 +293,7 @@ func assertActionIDs(t *testing.T, plan *app.Plan, want []string) {
 	t.Helper()
 	if plan == nil {
 		t.Fatalf("plan is nil")
+		return
 	}
 	got := make([]string, 0, len(plan.Actions))
 	for _, action := range plan.Actions {
