@@ -180,6 +180,19 @@ type actionCompletion struct {
 	result app.ActionResult
 }
 
+type retryCommandError struct {
+	err     error
+	command string
+}
+
+func (e *retryCommandError) Error() string {
+	return e.err.Error()
+}
+
+func (e *retryCommandError) Unwrap() error {
+	return e.err
+}
+
 func (e Executor) runActions(ctx context.Context, result *app.RunResult, actions []app.Action, opts runOptions) error {
 	nodes, hasDependents, err := buildActionGraph(actions)
 	if err != nil {
@@ -299,6 +312,7 @@ func (e Executor) executeActionResult(ctx context.Context, action app.Action, op
 	if err := e.executeAction(ctx, action, opts); err != nil {
 		actionResult.Status = app.ActionStatusFailed
 		actionResult.Error = err.Error()
+		actionResult.RetryCommand = retryCommand(err)
 		emitActionProgress(opts.Progress, app.ProgressFailure, action, err.Error())
 		return actionResult
 	}
@@ -444,11 +458,46 @@ func (e Executor) rebase(ctx context.Context, git gitrepo.Client, action app.Act
 	}
 	if errors.Is(err, gitrepo.ErrRebaseConflict) {
 		if abortErr := git.AbortRebase(ctx); abortErr != nil {
-			return fmt.Errorf("rebase conflict; abort rebase: %w", abortErr)
+			return withRetryCommand(
+				fmt.Errorf("rebase conflict; abort rebase: %w", abortErr),
+				manualRebaseCommand(action, remote),
+			)
 		}
-		return fmt.Errorf("rebase conflict")
+		return withRetryCommand(fmt.Errorf("rebase conflict"), manualRebaseCommand(action, remote))
 	}
-	return fmt.Errorf("rebase %s: %w", action.PR.HeadRefName, err)
+	return withRetryCommand(
+		fmt.Errorf("rebase %s: %w", action.PR.HeadRefName, err),
+		manualRebaseCommand(action, remote),
+	)
+}
+
+func withRetryCommand(err error, command string) error {
+	return &retryCommandError{err: err, command: command}
+}
+
+func retryCommand(err error) string {
+	var retryErr *retryCommandError
+	if !errors.As(err, &retryErr) {
+		return ""
+	}
+	return retryErr.command
+}
+
+func manualRebaseCommand(action app.Action, remote string) string {
+	newBase := action.NewBase
+	if newBase == "" {
+		newBase = action.PR.BaseRefName
+	}
+	baseRef := remote + "/" + newBase
+	if action.Upstream == "" {
+		return fmt.Sprintf("git rebase %s %s", baseRef, action.PR.HeadRefName)
+	}
+	return fmt.Sprintf(
+		"git rebase --onto %s %s %s",
+		baseRef,
+		action.Upstream,
+		action.PR.HeadRefName,
+	)
 }
 
 func (e Executor) updateBase(ctx context.Context, gh ghcli.Client, action app.Action, progress app.ProgressSink) error {

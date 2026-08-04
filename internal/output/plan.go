@@ -79,6 +79,11 @@ func RenderRunResult(w io.Writer, result *app.RunResult, format Format, noColor 
 		if _, err := fmt.Fprintf(w, "  %s\n", line); err != nil {
 			return err
 		}
+		if action.RetryCommand != "" {
+			if _, err := fmt.Fprintf(w, "    retry: %s\n", action.RetryCommand); err != nil {
+				return err
+			}
+		}
 	}
 	if len(result.Warnings) > 0 {
 		if _, err := fmt.Fprintln(w, ""); err != nil {
@@ -177,15 +182,16 @@ type actionJSON struct {
 }
 
 type actionResultJSON struct {
-	ID       string `json:"id"`
-	Kind     string `json:"kind"`
-	PR       int    `json:"pr"`
-	Head     string `json:"head"`
-	NewBase  string `json:"newBase,omitempty"`
-	Upstream string `json:"upstream,omitempty"`
-	Reason   string `json:"reason,omitempty"`
-	Status   string `json:"status"`
-	Error    string `json:"error,omitempty"`
+	ID           string `json:"id"`
+	Kind         string `json:"kind"`
+	PR           int    `json:"pr"`
+	Head         string `json:"head"`
+	NewBase      string `json:"newBase,omitempty"`
+	Upstream     string `json:"upstream,omitempty"`
+	Reason       string `json:"reason,omitempty"`
+	Status       string `json:"status"`
+	Error        string `json:"error,omitempty"`
+	RetryCommand string `json:"retryCommand,omitempty"`
 }
 
 type warningJSON struct {
@@ -277,15 +283,16 @@ func actionResultsJSON(results []app.ActionResult) []actionResultJSON {
 	for _, result := range results {
 		action := result.Action
 		out = append(out, actionResultJSON{
-			ID:       action.ID,
-			Kind:     string(action.Kind),
-			PR:       action.PR.Number,
-			Head:     action.PR.HeadRefName,
-			NewBase:  action.NewBase,
-			Upstream: action.Upstream,
-			Reason:   string(action.Reason),
-			Status:   string(result.Status),
-			Error:    result.Error,
+			ID:           action.ID,
+			Kind:         string(action.Kind),
+			PR:           action.PR.Number,
+			Head:         action.PR.HeadRefName,
+			NewBase:      action.NewBase,
+			Upstream:     action.Upstream,
+			Reason:       string(action.Reason),
+			Status:       string(result.Status),
+			Error:        result.Error,
+			RetryCommand: result.RetryCommand,
 		})
 	}
 	return out

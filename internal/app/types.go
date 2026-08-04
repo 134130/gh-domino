@@ -59,9 +59,10 @@ const (
 )
 
 type ActionResult struct {
-	Action Action
-	Status ActionStatus
-	Error  string
+	Action       Action
+	Status       ActionStatus
+	Error        string
+	RetryCommand string
 }
 
 type RunResult struct {

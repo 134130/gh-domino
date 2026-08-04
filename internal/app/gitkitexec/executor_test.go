@@ -255,6 +255,9 @@ func TestExecutorSkipsSelectedDependentActionWhenDependencyFails(t *testing.T) {
 	if result.Actions[0].Status != app.ActionStatusFailed || result.Actions[0].Error != "rebase conflict" {
 		t.Fatalf("parent result mismatch: %#v", result.Actions[0])
 	}
+	if got, want := result.Actions[0].RetryCommand, "git rebase origin/main parent"; got != want {
+		t.Fatalf("retry command mismatch: want %q, got %q", want, got)
+	}
 	if result.Actions[1].Status != app.ActionStatusSkipped {
 		t.Fatalf("child result mismatch: %#v", result.Actions[1])
 	}
@@ -270,6 +273,33 @@ func TestExecutorSkipsSelectedDependentActionWhenDependencyFails(t *testing.T) {
 	}
 	if got := commandStrings(runner.commands); !reflect.DeepEqual(got, want) {
 		t.Fatalf("commands mismatch\nwant: %#v\n got: %#v", want, got)
+	}
+}
+
+func TestManualRebaseCommand(t *testing.T) {
+	tests := []struct {
+		name   string
+		action app.Action
+		want   string
+	}{
+		{
+			name:   "base branch",
+			action: repairAction(52, "main", "feature", "", ""),
+			want:   "git rebase upstream/main feature",
+		},
+		{
+			name:   "new base and upstream commit",
+			action: repairAction(52, "stack-1", "feature", "main", "abc123"),
+			want:   "git rebase --onto upstream/main abc123 feature",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := manualRebaseCommand(tt.action, "upstream"); got != tt.want {
+				t.Fatalf("manualRebaseCommand() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 

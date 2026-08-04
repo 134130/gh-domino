@@ -175,6 +175,16 @@ func TestRenderRunResultHuman(t *testing.T) {
 			},
 			Status: app.ActionStatusFailed,
 			Error:  "update failed",
+		}, {
+			Action: app.Action{
+				ID:      "repair-pr-54",
+				Kind:    app.ActionRepairPR,
+				PR:      pull(54, "qux", "stack-1", "stack-3"),
+				NewBase: "main",
+			},
+			Status:       app.ActionStatusFailed,
+			Error:        "rebase conflict",
+			RetryCommand: "git rebase --onto origin/main abc123 stack-3",
 		}},
 	}
 
@@ -185,7 +195,9 @@ func TestRenderRunResultHuman(t *testing.T) {
 
 	want := "Results\n" +
 		"  ✔ repair #52 stack-2 → main\n" +
-		"  ✘ update #53 topic: update failed\n"
+		"  ✘ update #53 topic: update failed\n" +
+		"  ✘ repair #54 stack-3 → main: rebase conflict\n" +
+		"    retry: git rebase --onto origin/main abc123 stack-3\n"
 	if got := out.String(); got != want {
 		t.Fatalf("output mismatch\nwant: %q\n got: %q", want, got)
 	}
@@ -200,8 +212,9 @@ func TestRenderRunResultJSON(t *testing.T) {
 				PR:      pull(52, "bar", "stack-1", "stack-2"),
 				NewBase: "main",
 			},
-			Status: app.ActionStatusFailed,
-			Error:  "rebase conflict",
+			Status:       app.ActionStatusFailed,
+			Error:        "rebase conflict",
+			RetryCommand: "git rebase --onto origin/main abc123 stack-2",
 		}},
 	}
 
@@ -215,6 +228,7 @@ func TestRenderRunResultJSON(t *testing.T) {
 		`"id":"repair-pr-52"`,
 		`"status":"failed"`,
 		`"error":"rebase conflict"`,
+		`"retryCommand":"git rebase --onto origin/main abc123 stack-2"`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("expected output to contain %q, got %q", want, got)
