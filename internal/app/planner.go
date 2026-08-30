@@ -450,11 +450,11 @@ func (p Planner) squashUpstreamForChild(ctx context.Context, child, base gitobj.
 		return upstream, err
 	}
 
-	end, ok := matchingCommitSequenceEnd(child.Commits, base.Commits)
-	if !ok || end >= len(child.Commits)-1 {
+	match, ok := matchingCommitBoundary(child.Commits, base.Commits)
+	if !ok || match.end >= len(child.Commits)-1 {
 		return upstream, nil
 	}
-	return child.Commits[end].Oid, nil
+	return child.Commits[match.end].Oid, nil
 }
 
 func (p Planner) buildDependencyTree(
@@ -545,19 +545,20 @@ func (p Planner) bestMergedOriginalBase(
 ) (*gitobj.PullRequest, error) {
 	if len(pr.Commits) > 1 {
 		bestIndex := -1
-		bestEnd := -1
+		bestMatch := commitSequenceMatch{end: -1}
 		for i := range mergedPRs {
 			mergedPR := mergedPRs[i]
 			if !sameDefaultBaseCandidate(pr, mergedPR) {
 				continue
 			}
-			end, ok := matchingCommitSequenceEnd(pr.Commits, mergedPR.Commits)
-			if !ok || end >= len(pr.Commits)-1 {
+			match, ok := matchingCommitBoundary(pr.Commits, mergedPR.Commits)
+			if !ok || match.end >= len(pr.Commits)-1 {
 				continue
 			}
-			if bestIndex < 0 || end > bestEnd || end == bestEnd && newerPullNumber(mergedPR, mergedPRs[bestIndex]) {
+			if bestIndex < 0 || match.betterThan(bestMatch) ||
+				match == bestMatch && newerPullNumber(mergedPR, mergedPRs[bestIndex]) {
 				bestIndex = i
-				bestEnd = end
+				bestMatch = match
 			}
 		}
 		if bestIndex >= 0 {
@@ -606,6 +607,43 @@ func sameDefaultBaseCandidate(pr, mergedPR gitobj.PullRequest) bool {
 
 func newerPullNumber(a, b gitobj.PullRequest) bool {
 	return a.Number > b.Number
+}
+
+type commitSequenceMatch struct {
+	end    int
+	length int
+}
+
+func (m commitSequenceMatch) betterThan(other commitSequenceMatch) bool {
+	return m.end > other.end || m.end == other.end && m.length > other.length
+}
+
+// matchingCommitBoundary accepts partial matches only for exact OIDs. A child
+// may branch before its parent receives commits that are later squash-merged.
+func matchingCommitBoundary(target, pattern []gitobj.PullRequestCommit) (commitSequenceMatch, bool) {
+	if end, ok := matchingCommitSequenceEnd(target, pattern); ok {
+		return commitSequenceMatch{end: end, length: len(pattern)}, true
+	}
+	return matchingCommitOIDPrefix(target, pattern)
+}
+
+func matchingCommitOIDPrefix(target, pattern []gitobj.PullRequestCommit) (commitSequenceMatch, bool) {
+	best := commitSequenceMatch{end: -1}
+	for start := range target {
+		length := 0
+		for length < len(pattern) && start+length < len(target) &&
+			sameCommitOID(target[start+length], pattern[length]) {
+			length++
+		}
+		if length == 0 {
+			continue
+		}
+		candidate := commitSequenceMatch{end: start + length - 1, length: length}
+		if candidate.betterThan(best) {
+			best = candidate
+		}
+	}
+	return best, best.end >= 0
 }
 
 func matchingCommitSequenceEnd(target, pattern []gitobj.PullRequestCommit) (int, bool) {

@@ -128,6 +128,93 @@ func TestPlannerUsesCurrentPRCommitForRebasedSquashMergedAncestor(t *testing.T) 
 	}
 }
 
+func TestPlannerUsesSharedPrefixWhenMergedAncestorAdvancedAfterChildBranch(t *testing.T) {
+	ctx := context.Background()
+	store := newFakeStore()
+	store.defaultBranch = "develop"
+
+	current := withCommitHeadlines(
+		pr(1386, "Log MySQL commands", "develop", "cooper/mysql-query-logging"),
+		commit("config", "Add DBMS query logging runtime config"),
+		commit("strategies", "Replace DBMS logging flags with strategies"),
+		commit("decoder", "Add MySQL compressed protocol decoder"),
+		commit("logging", "Log MySQL commands across auth and TLS"),
+	)
+	mergedBase := withMerge(withCommitHeadlines(
+		pr(1384, "Add DBMS query logging runtime config", "develop", "cooper/dbms-query-logging"),
+		commit("config", "Add DBMS query logging runtime config"),
+		commit("strategies", "Replace DBMS logging flags with strategies"),
+		commit("late-lint", "lint"),
+	), "squash-merge")
+
+	plan, err := NewPlanner(store).Build(ctx, Snapshot{
+		OpenPullRequests:   []gitobj.PullRequest{current},
+		MergedPullRequests: []gitobj.PullRequest{mergedBase},
+		HeadSHAs: map[string]string{
+			"cooper/mysql-query-logging": "logging",
+		},
+	}, PlanOptions{})
+	if err != nil {
+		t.Fatalf("Build returned error: %v", err)
+	}
+
+	if len(plan.Actions) != 1 {
+		t.Fatalf("expected 1 action, got %d", len(plan.Actions))
+	}
+	action := plan.Actions[0]
+	if got, want := action.Upstream, "strategies"; got != want {
+		t.Fatalf("upstream mismatch: want %q, got %q", want, got)
+	}
+	if got, want := action.Reason, ReasonMergedAncestor; got != want {
+		t.Fatalf("reason mismatch: want %q, got %q", want, got)
+	}
+	status := statusForPR(t, plan, 1386)
+	if status.OriginalBase == nil || status.OriginalBase.Number != 1384 {
+		t.Fatalf("expected original base #1384, got %#v", status.OriginalBase)
+	}
+}
+
+func TestPlannerDoesNotUseHeadlineOnlyPartialMergedAncestor(t *testing.T) {
+	ctx := context.Background()
+	store := newFakeStore()
+	store.defaultBranch = "develop"
+	store.refSHAs["origin/develop"] = "new-develop"
+	store.mergeBases[pair("origin/develop", "logging")] = "old-develop"
+
+	current := withCommitHeadlines(
+		pr(1386, "Log MySQL commands", "develop", "cooper/mysql-query-logging"),
+		commit("child-config", "Add DBMS query logging runtime config"),
+		commit("child-strategies", "Replace DBMS logging flags with strategies"),
+		commit("decoder", "Add MySQL compressed protocol decoder"),
+		commit("logging", "Log MySQL commands across auth and TLS"),
+	)
+	mergedBase := withMerge(withCommitHeadlines(
+		pr(1384, "Add DBMS query logging runtime config", "develop", "cooper/dbms-query-logging"),
+		commit("parent-config", "Add DBMS query logging runtime config"),
+		commit("parent-strategies", "Replace DBMS logging flags with strategies"),
+		commit("late-lint", "lint"),
+	), "squash-merge")
+
+	plan, err := NewPlanner(store).Build(ctx, Snapshot{
+		OpenPullRequests:   []gitobj.PullRequest{current},
+		MergedPullRequests: []gitobj.PullRequest{mergedBase},
+		HeadSHAs: map[string]string{
+			"cooper/mysql-query-logging": "logging",
+		},
+	}, PlanOptions{})
+	if err != nil {
+		t.Fatalf("Build returned error: %v", err)
+	}
+
+	status := statusForPR(t, plan, 1386)
+	if status.OriginalBase != nil {
+		t.Fatalf("expected no original base, got #%d", status.OriginalBase.Number)
+	}
+	if got, want := status.State, PullStateUpdateable; got != want {
+		t.Fatalf("state mismatch: want %q, got %q", want, got)
+	}
+}
+
 func TestPlannerIncludesCleanPRsWhenRequested(t *testing.T) {
 	ctx := context.Background()
 	store := newFakeStore()

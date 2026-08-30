@@ -61,6 +61,38 @@ func TestHarnessRepairsSquashMergedParentWithUpstreamBoundary(t *testing.T) {
 	assert.NotContains(t, commits, parentCommit)
 }
 
+func TestHarnessRepairsSquashMergedParentAdvancedAfterChildBranch(t *testing.T) {
+	h := harness.New(t)
+	h.Branch("stack-1", "origin/main")
+	h.Commit("stack-1", "parent-a.txt", "parent a\n")
+	sharedBoundary := h.Commit("stack-1", "parent-b.txt", "parent b\n")
+	h.Push("stack-1")
+
+	h.Branch("stack-2", "origin/stack-1")
+	h.Commit("stack-2", "child-a.txt", "child a\n")
+	h.Commit("stack-2", "child-b.txt", "child b\n")
+	h.Push("stack-2")
+
+	h.Commit("stack-1", "parent-late.txt", "parent late\n")
+	h.Push("stack-1")
+	h.OpenPR(1, "parent", "main", "stack-1")
+	h.OpenPR(2, "child", "main", "stack-2")
+
+	h.SquashMerge(1)
+	plan := h.Plan(app.PlanOptions{})
+	action := actionForPR(t, plan, 2)
+	assert.Equal(t, "main", action.NewBase)
+	assert.Equal(t, sharedBoundary, action.Upstream)
+	assert.Equal(t, app.ReasonMergedAncestor, action.Reason)
+
+	result := h.Execute(plan, app.ExecuteOptions{})
+	assertActionStatuses(t, result, []app.ActionStatus{app.ActionStatusSuccess})
+	assert.Contains(t, h.Runner().CommandStrings(), "git rebase --onto origin/main "+sharedBoundary+" stack-2")
+	assert.Equal(t, "main", h.PRBase(2))
+	assert.Equal(t, h.Ref("origin/main"), h.MergeBase("origin/main", "origin/stack-2"))
+	assert.Len(t, h.RevList("origin/main..origin/stack-2"), 2)
+}
+
 func TestHarnessRepairsRebaseMergedParentWithUpstreamBoundary(t *testing.T) {
 	h := harness.New(t)
 	h.Branch("stack-1", "origin/main")
